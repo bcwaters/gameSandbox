@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Directional Shooter</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js"></script>
+    <style>
+        body { margin: 0; display: flex; justify-content: center; }
+    </style>
+</head>
+<body>
+    <script>
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            },
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    debug: false,
+                    gravity: { y: 0 }
+                }
+            }
+        };
+
+        const game = new Phaser.Game(config);
+
+        let player;
+        let cursors;
+        let projectiles;
+        let lastDirection = 'down';
+
+        function preload() {
+            // Add this to see loading errors
+            this.load.on('loaderror', function(file) {
+                console.error('Error loading asset:', file.src);
+            });
+            
+            // Load your properly formatted character sprite sheet
+            this.load.spritesheet('character', 
+                'sprites/character_1.png', 
+                { 
+                    frameWidth: 18,  // Adjust if your sprite has different dimensions
+                    frameHeight: 20  // Adjust if your sprite has different dimensions
+                }
+            );
+            this.load.image('projectile', 'sprites/ball.png');
+        }
+
+        function create() {
+            // Create player with directional animations
+            player = this.physics.add.sprite(400, 300, 'character');
+            
+            // Create animation for each direction based on your custom layout
+            // Row 1: Up animation
+            this.anims.create({
+                key: 'walk-up',
+                frames: this.anims.generateFrameNumbers('character', { 
+                    start: 0, 
+                    end: 3  // First row - up animation
+                }),
+                frameRate: 10,
+                repeat: -1
+            });
+
+            // Row 2: Right animation
+            this.anims.create({
+                key: 'walk-right',
+                frames: this.anims.generateFrameNumbers('character', { 
+                    start: 4, 
+                    end: 7  // Second row - right animation
+                }),
+                frameRate: 10,
+                repeat: -1
+            });
+
+            // Row 3: Down animation
+            this.anims.create({
+                key: 'walk-down',
+                frames: this.anims.generateFrameNumbers('character', { 
+                    start: 8, 
+                    end: 11  // Third row - down animation
+                }),
+                frameRate: 10,
+                repeat: -1
+            });
+
+            // Row 4: Left animation
+            this.anims.create({
+                key: 'walk-left',
+                frames: this.anims.generateFrameNumbers('character', { 
+                    start: 12, 
+                    end: 15  // Fourth row - left animation
+                }),
+                frameRate: 10,
+                repeat: -1
+            });
+
+            // Create projectile group
+            projectiles = this.physics.add.group({
+                classType: Phaser.Physics.Arcade.Image,
+                maxSize: 10,
+                runChildUpdate: true
+            });
+
+            // Setup input
+            cursors = this.input.keyboard.createCursorKeys();
+
+            // Shooting input
+            this.input.keyboard.on('keydown-SPACE', () => {
+                fireProjectile();
+            });
+        }
+
+        function update() {
+            const speed = 200;
+            let moving = false;
+
+            // Reset velocity
+            player.setVelocity(0);
+
+            // Horizontal movement
+            if (cursors.left.isDown) {
+                player.setVelocityX(-speed);
+                player.anims.play('walk-left', true);
+                lastDirection = 'left';
+                moving = true;
+            } else if (cursors.right.isDown) {
+                player.setVelocityX(speed);
+                player.anims.play('walk-right', true);
+                lastDirection = 'right';
+                moving = true;
+            }
+
+            // Vertical movement
+            if (cursors.up.isDown) {
+                player.setVelocityY(-speed);
+                player.anims.play('walk-up', true);
+                lastDirection = 'up';
+                moving = true;
+            } else if (cursors.down.isDown) {
+                player.setVelocityY(speed);
+                player.anims.play('walk-down', true);
+                lastDirection = 'down';
+                moving = true;
+            }
+
+            // Stop animations if not moving
+            if (!moving) {
+                player.anims.pause();
+            }
+        }
+
+        function fireProjectile() {
+            const projectile = projectiles.get(
+                player.x, 
+                player.y, 
+                'projectile'
+            );
+
+            if (projectile) {
+                projectile.setActive(true);
+                projectile.setVisible(true);
+                projectile.body.enable = true;
+
+                // Set projectile velocity based on last direction
+                switch(lastDirection) {
+                    case 'up':
+                        projectile.setVelocity(0, -400);
+                        break;
+                    case 'down':
+                        projectile.setVelocity(0, 400);
+                        break;
+                    case 'left':
+                        projectile.setVelocity(-400, 0);
+                        break;
+                    case 'right':
+                        projectile.setVelocity(400, 0);
+                        break;
+                }
+
+                // Destroy projectile when it goes off screen
+                projectile.body.onWorldBounds = true;
+                projectile.body.world.on('worldbounds', (body) => {
+                    body.gameObject.setActive(false);
+                    body.gameObject.setVisible(false);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
