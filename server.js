@@ -19,6 +19,16 @@ app.get('/', (req, res) => {
 // Game constants
 const PLAYER_SPEED = 200; // pixels per second
 const TICK_RATE = 1000 / 60; // 60 FPS
+const MAX_HEALTH = 5;
+const MAX_AMMO = 10;
+const HIT_COOLDOWN = 1000; // 1 second cooldown between hits
+const RESPAWN_POSITIONS = [
+  { x: 100, y: 100 },
+  { x: 700, y: 100 },
+  { x: 100, y: 500 },
+  { x: 700, y: 500 },
+  { x: 400, y: 300 }
+];
 
 // Store player data
 const players = {};
@@ -34,6 +44,9 @@ io.on('connection', (socket) => {
     y: Math.floor(Math.random() * 500) + 50,
     direction: 'down',
     moving: false,
+    health: MAX_HEALTH, // Initialize with full health
+    ammo: MAX_AMMO,     // Initialize with full ammo
+    lastHitTime: 0,     // Track last time player was hit
     inputs: {
       left: false,
       right: false,
@@ -90,8 +103,13 @@ io.on('connection', (socket) => {
     
     const player = players[socket.id];
     
+    // Make sure player has ammo
+    if (player.ammo <= 0) return;
+    
+    // Decrease player's ammo
+    player.ammo--;
+    
     // Make sure we have the correct direction
-    // Either use what was sent in projectileData or fall back to the player's current direction
     const direction = projectileData.direction || player.direction;
     
     // Calculate offset based on direction to prevent self-collision
@@ -122,14 +140,20 @@ io.on('connection', (socket) => {
         offsetY = offsetDistance * 0.7;
     }
     
+    // Create a unique projectile ID that includes the player ID to make tracking easier
+    const uniqueId = `${socket.id}_${Date.now()}_${Math.random().toString().slice(2, 8)}`;
+    
     const projectile = {
-        id: Date.now() + Math.random().toString(),
+        id: uniqueId,
         x: player.x + offsetX,
         y: player.y + offsetY,
         velocityX: 0,
         velocityY: 0,
-        playerId: socket.id
+        playerId: socket.id, // Always use the socket ID of the player who fired
+        ownerName: player.name || 'unknown'
     };
+    
+    console.log(`Player ${socket.id} fired projectile ${projectile.id}`);
     
     // Set velocity based on direction - handle all directions explicitly
     const speed = 400;
@@ -167,14 +191,158 @@ io.on('connection', (socket) => {
         y: projectile.y,
         velocityX: projectile.velocityX,
         velocityY: projectile.velocityY,
-        playerId: socket.id
+        playerId: socket.id // Explicitly set the owner ID
     });
+  });
+  
+  // When a player reloads
+  socket.on('reloadAmmo', () => {
+    if (players[socket.id]) {
+      players[socket.id].ammo = MAX_AMMO;
+    }
   });
   
   // When a player is hit
   socket.on('playerHit', function(hitInfo) {
-    // Broadcast the hit event to all players
-    io.emit('playerHit', hitInfo);
+    // Update player health on the server
+    const hitPlayerId = hitInfo.hitPlayerId;
+    const currentTime = Date.now();
+    
+    if (players[hitPlayerId]) {
+      // Check hit cooldown
+      if (currentTime - players[hitPlayerId].lastHitTime < HIT_COOLDOWN) {
+        // Ignore hit during cooldown period
+        return;
+      }
+      
+      // Update last hit time
+      players[hitPlayerId].lastHitTime = currentTime;
+      
+      // Decrease health if player still has health
+      if (players[hitPlayerId].health > 0) {
+        players[hitPlayerId].health--;
+        
+        // Add death handling if needed
+        if (players[hitPlayerId].health <= 0) {
+          // Player is dead - but we'll let the client handle the visual aspect
+          console.log(`Player ${hitPlayerId} has been defeated!`);
+        }
+        
+        // Broadcast the hit event to all players
+        io.emit('playerHit', hitInfo);
+      }
+    }
+  });
+  
+  // Handle player defeat
+  socket.on('playerDefeated', function(data) {
+    if (players[data.playerId]) {
+      // Mark player as defeated
+      players[data.playerId].defeated = true;
+      
+      // Broadcast defeat to other players
+      io.emit('playerDefeated', { playerId: data.playerId });
+    }
+  });
+  
+  // Handle player respawn
+  socket.on('respawnPlayer', function(data) {
+    if (players[data.playerId]) {
+      const player = players[data.playerId];
+      
+      // Get a random respawn position
+      const respawnPos = RESPAWN_POSITIONS[Math.floor(Math.random() * RESPAWN_POSITIONS.length)];
+      
+      // Reset player position and stats
+      player.x = respawnPos.x;
+      player.y = respawnPos.y;
+      player.health = MAX_HEALTH;
+      player.ammo = MAX_AMMO;
+      player.defeated = false;
+      
+      // Reset velocity and motion
+      player.collisionVelocityX = 0;
+      player.collisionVelocityY = 0;
+      player.collisionFrames = 0;
+      
+      // Broadcast respawn to all players
+      io.emit('playerRespawned', {
+        playerId: data.playerId,
+        x: player.x,
+        y: player.y,
+        health: player.health,
+        ammo: player.ammo
+      });
+      
+      console.log(`Player ${data.playerId} has respawned at position (${player.x}, ${player.y})`);
+    }
+  });
+  
+  // Handle projectile destruction
+  socket.on('destroyProjectile', function(data) {
+    const projectileId = data.projectileId;
+    
+    // Find and remove the projectile
+    const projectileIndex = projectiles.findIndex(p => p.id === projectileId);
+    if (projectileIndex !== -1) {
+      projectiles.splice(projectileIndex, 1);
+      
+      // Notify all clients to destroy this projectile
+      io.emit('projectileDestroyed', projectileId);
+    }
+  });
+  
+  // Handle sword use
+  socket.on('swordUsed', function(swordData) {
+    if (players[socket.id]) {
+      // Broadcast the sword use to all other players
+      io.emit('swordUsed', {
+        playerId: socket.id,
+        x: swordData.x,
+        y: swordData.y,
+        rotation: swordData.rotation,
+        direction: swordData.direction
+      });
+      
+      console.log(`Player ${socket.id} used sword in direction: ${swordData.direction}`);
+    }
+  });
+  
+  // Handle sword hit detection
+  socket.on('swordHit', function(hitInfo) {
+    const hitPlayerId = hitInfo.hitPlayerId;
+    const attackerId = hitInfo.attackerId;
+    const currentTime = Date.now();
+    
+    // Verify both players exist
+    if (players[hitPlayerId] && players[attackerId]) {
+      // Check hit cooldown
+      if (currentTime - players[hitPlayerId].lastHitTime < HIT_COOLDOWN) {
+        // Ignore hit during cooldown period
+        return;
+      }
+      
+      // Update last hit time
+      players[hitPlayerId].lastHitTime = currentTime;
+      
+      // Decrease health if player still has health
+      if (players[hitPlayerId].health > 0) {
+        players[hitPlayerId].health--;
+        
+        // Check if player is now defeated
+        if (players[hitPlayerId].health <= 0) {
+          console.log(`Player ${hitPlayerId} has been defeated by sword from ${attackerId}!`);
+        }
+        
+        // Broadcast the sword hit event to all players
+        io.emit('playerSwordHit', {
+          hitPlayerId: hitPlayerId,
+          attackerId: attackerId
+        });
+        
+        console.log(`Player ${hitPlayerId} was hit by ${attackerId}'s sword. Health now: ${players[hitPlayerId].health}`);
+      }
+    }
   });
 });
 
@@ -251,18 +419,35 @@ function updateGame() {
     // Check for collision with players
     let hitPlayer = false;
     for (const playerId in players) {
-      // Skip the player who fired this projectile - IMPORTANT CHECK
+      // Skip the player who fired this projectile - absolutely essential
       if (playerId === projectile.playerId) {
+        // Log skip of self collision
+        console.log(`Skipping collision check between projectile ${projectile.id} and its owner ${playerId}`);
         continue;
       }
       
       const player = players[playerId];
+      
+      // Skip if player is in hit cooldown
+      const currentTime = Date.now();
+      if (currentTime - player.lastHitTime < HIT_COOLDOWN) {
+        console.log(`Skipping hit on ${playerId} due to cooldown`);
+        continue;
+      }
+      
       const dx = player.x - projectile.x;
       const dy = player.y - projectile.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       // If collision detected
       if (distance < 20) { // Approximate collision radius
+        // Double-check that this isn't a self-hit
+        if (playerId === projectile.playerId) {
+          console.log(`Prevented self-hit between player ${playerId} and projectile ${projectile.id}`);
+          continue;
+        }
+        
+        console.log(`Hit detected! Player ${playerId} hit by projectile ${projectile.id} from player ${projectile.playerId}`);
         hitPlayer = true;
         
         // Apply knockback from being hit
@@ -273,6 +458,14 @@ function updateGame() {
         player.collisionVelocityX = Math.cos(knockbackAngle) * knockbackSpeed;
         player.collisionVelocityY = Math.sin(knockbackAngle) * knockbackSpeed;
         player.collisionFrames = 5;
+        
+        // Update player's hit time
+        player.lastHitTime = currentTime;
+        
+        // Decrease player health
+        if (player.health > 0) {
+          player.health--;
+        }
         
         // Emit hit event - only for valid hits (not self-hits)
         io.emit('playerHit', {
@@ -298,7 +491,9 @@ function updateGame() {
       x: player.x,
       y: player.y,
       direction: player.direction,
-      moving: player.moving
+      moving: player.moving,
+      health: player.health,  // Include health in state
+      ammo: player.ammo       // Include ammo in state
     })),
     projectiles: projectiles.map(projectile => ({
       id: projectile.id,

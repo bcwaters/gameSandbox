@@ -27,18 +27,33 @@
         let lastDirection = 'down';
         let otherPlayers = {}; // Store references to other players
         let playerId; // Store our socket ID
-        let hitCounter = 0; // Count how many times player has been hit
-        let hitCounterText; // Text to display hit counter
+        let playerHealth = 5; // Player health with 5 slots
+        let maxHealth = 5; // Maximum health capacity
+        let healthBarUI; // UI components for health bar
         let ammoCounter = 10; // Starting ammo amount.
         let maxAmmo = 10; // Maximum ammo capacity
         let ammoCounterText; // Text to display ammo counter
         let reloadKey; // Key for reloading
+        let swordKey; // Key for sword attack
         let otherPlayersGroup; // Group for collision detection
         let lastHitTime = 0;
+        let hitCooldown = 1000; // 1 second cooldown between hits
         let playerLastInputs = {};
+        let defeatText; // Text to display when defeated
+        let isDefeated = false; // Flag to track if player is defeated
+        let swordCooldown = 1000; // 1 second cooldown between sword attacks
+        let lastSwordTime = 0; // Last time sword was used
+        let playersHitBySword = {}; // Track players already hit by current sword
 
         function preload() {
             AssetLoader.preloadAssets(this);
+            
+            // Load projectile image
+            this.load.image('projectile', 'sprites/projectile.png');
+            this.load.image('bullet', 'sprites/bullet.png');
+            
+            // Load sword image
+            this.load.image('sword', 'assets/Swords/sword.png');
         }
 
         function create() {
@@ -62,6 +77,29 @@
             // Setup input
             cursors = this.input.keyboard.createCursorKeys();
             reloadKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+            swordKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
+            
+            // Add reload functionality
+            reloadKey.on('down', function() {
+                // Only reload if we're not at max ammo
+                if (ammoCounter < maxAmmo) {
+                    // Reset ammo to max
+                    ammoCounter = maxAmmo;
+                    updateAmmoCounterText();
+                    
+                    // Send reload event to server
+                    socket.emit('reloadAmmo');
+                    
+                    // Optional: Add reload sound or animation here
+                    // Example: this.sound.play('reload');
+                }
+            }, this);
+            
+            // Add sword attack functionality
+            swordKey.on('down', function() {
+                // Use the sword attack function
+                useSword(this);
+            }, this);
             
             // Shooting input
             this.input.keyboard.on('keydown-SPACE', () => {
@@ -73,15 +111,10 @@
                 }
             });
             
-            // Create UI for counters
-            hitCounterText = this.add.text(16, 16, 'Hits: 0', { 
-                fontSize: '18px', 
-                fill: '#fff',
-                backgroundColor: '#000',
-                padding: { x: 5, y: 5 }
-            });
-            hitCounterText.setScrollFactor(0); // Fix to camera
+            // Create health bar UI
+            createHealthBar(this);
             
+            // Create ammo counter UI
             ammoCounterText = this.add.text(16, 50, 'Ammo: 10/10', { 
                 fontSize: '18px', 
                 fill: '#fff',
@@ -149,7 +182,24 @@
                 // Setup collision between projectiles and other players
                 self.physics.add.overlap(projectiles, otherPlayersGroup, projectileHitPlayer, function(projectile, otherPlayer) {
                     // Only register collisions for projectiles that weren't fired by the hit player
-                    return projectile.playerId !== otherPlayer.playerId;
+                    // More explicit check to avoid self-hits
+                    console.log("Checking overlap between projectile by", projectile.playerId, "and player", otherPlayer.playerId);
+                    if (projectile.playerId === otherPlayer.playerId) {
+                        console.log("Rejected overlap - self hit");
+                        return false;
+                    }
+                    return true;
+                }, self);
+
+                // Setup collision between projectiles and the local player
+                self.physics.add.overlap(projectiles, player, projectileHitPlayer, function(projectile, playerObj) {
+                    // Make absolutely sure local player can't hit themselves
+                    console.log("Checking if local player can be hit by:", projectile.playerId);
+                    if (projectile.playerId === playerId) {
+                        console.log("Local player can't be hit by own projectile");
+                        return false;
+                    }
+                    return true;
                 }, self);
             });
             
@@ -161,6 +211,12 @@
             // Handle player disconnections
             socket.on('playerDisconnected', function(id) {
                 if (otherPlayers[id]) {
+                    // Clean up health bar container if it exists
+                    if (otherPlayers[id].healthBarContainer) {
+                        otherPlayers[id].healthBarContainer.destroy();
+                    }
+                    
+                    // Destroy the player sprite
                     otherPlayers[id].destroy();
                     delete otherPlayers[id];
                 }
@@ -194,8 +250,16 @@
             socket.on('playerHit', function(hitInfo) {
                 // If we were hit
                 if (hitInfo.hitPlayerId === playerId) {
-                    hitCounter++;
-                    updateHitCounterText();
+                    // Decrease health
+                    if (playerHealth > 0) {
+                        playerHealth--;
+                        updateHealthBar();
+                        
+                        // Check if player is defeated
+                        if (playerHealth <= 0 && !isDefeated) {
+                            handlePlayerDefeat(self);
+                        }
+                    }
                     
                     // Create visual effect only
                     createHitEffect(player);
@@ -215,6 +279,17 @@
                             player.x = serverPlayer.x;
                             player.y = serverPlayer.y;
                             player.direction = serverPlayer.direction;
+                            
+                            // Update health and ammo if they're different
+                            if (playerHealth !== serverPlayer.health) {
+                                playerHealth = serverPlayer.health;
+                                updateHealthBar();
+                            }
+                            
+                            if (ammoCounter !== serverPlayer.ammo) {
+                                ammoCounter = serverPlayer.ammo;
+                                updateAmmoCounterText();
+                            }
                         }
                     } else {
                         // Update other players
@@ -222,6 +297,13 @@
                             const otherPlayer = otherPlayers[serverPlayer.id];
                             otherPlayer.x = serverPlayer.x;
                             otherPlayer.y = serverPlayer.y;
+                            
+                            // Update other player's health and ammo
+                            otherPlayer.health = serverPlayer.health;
+                            otherPlayer.ammo = serverPlayer.ammo;
+                            
+                            // Update their health bar
+                            updateOtherPlayerHealthBar(otherPlayer);
                             
                             if (serverPlayer.moving) {
                                 otherPlayer.anims.play('walk-' + serverPlayer.direction, true);
@@ -259,12 +341,8 @@
 
             // Handle projectile destruction
             socket.on('projectileDestroyed', function(projectileId) {
-                // If we have a projectiles map, find and destroy the projectile
-                if (typeof projectilesMap !== 'undefined' && projectilesMap[projectileId]) {
-                    const projectile = projectilesMap[projectileId];
-                    projectile.setActive(false);
-                    projectile.setVisible(false);
-                    delete projectilesMap[projectileId];
+                if (projectilesMap[projectileId]) {
+                    destroyProjectile(projectilesMap[projectileId]);
                 }
             });
 
@@ -351,6 +429,171 @@
                     playerId: socket.id
                 });
             });
+
+            // Handle other player defeat
+            socket.on('playerDefeated', function(data) {
+                // If it's another player who was defeated
+                if (data.playerId !== playerId && otherPlayers[data.playerId]) {
+                    const defeatedPlayer = otherPlayers[data.playerId];
+                    
+                    // Visual effect for defeated player
+                    defeatedPlayer.setTint(0xff0000); // Red tint
+                    
+                    // Create a defeat text above the player
+                    const defeatedText = self.add.text(
+                        defeatedPlayer.x, 
+                        defeatedPlayer.y - 50, 
+                        'DEFEATED', 
+                        {
+                            fontSize: '20px',
+                            fontWeight: 'bold',
+                            fill: '#ff0000',
+                            stroke: '#000',
+                            strokeThickness: 3
+                        }
+                    );
+                    defeatedText.setOrigin(0.5);
+                    defeatedText.setDepth(20);
+                    
+                    // Animate and remove after 2 seconds
+                    self.tweens.add({
+                        targets: defeatedText,
+                        y: defeatedText.y - 30,
+                        alpha: 0,
+                        duration: 2000,
+                        onComplete: function() {
+                            defeatedText.destroy();
+                        }
+                    });
+                }
+            });
+            
+            // Handle player respawn
+            socket.on('playerRespawned', function(data) {
+                if (data.playerId === playerId) {
+                    // Update our own player position after respawn
+                    if (player) {
+                        player.x = data.x;
+                        player.y = data.y;
+                        playerHealth = data.health;
+                        ammoCounter = data.ammo;
+                        updateHealthBar();
+                        updateAmmoCounterText();
+                    }
+                } else if (otherPlayers[data.playerId]) {
+                    // Update other player
+                    const respawnedPlayer = otherPlayers[data.playerId];
+                    respawnedPlayer.x = data.x;
+                    respawnedPlayer.y = data.y;
+                    respawnedPlayer.health = data.health;
+                    respawnedPlayer.ammo = data.ammo;
+                    respawnedPlayer.clearTint(); // Remove red tint
+                    
+                    // Update their health bar
+                    updateOtherPlayerHealthBar(respawnedPlayer);
+                    
+                    // Show respawn effect
+                    const respawnEffect = self.add.sprite(
+                        respawnedPlayer.x,
+                        respawnedPlayer.y,
+                        'character'
+                    );
+                    respawnEffect.setTint(0x00ffff); // Cyan tint
+                    respawnEffect.setAlpha(0.7);
+                    respawnEffect.setScale(1.5);
+                    
+                    // Animation
+                    self.tweens.add({
+                        targets: respawnEffect,
+                        alpha: 0,
+                        scale: 0.5,
+                        duration: 800,
+                        onComplete: function() {
+                            respawnEffect.destroy();
+                        }
+                    });
+                }
+            });
+
+            // Handle sword used by other players
+            socket.on('swordUsed', function(swordData) {
+                if (swordData.playerId !== playerId) {
+                    // Create sword sprite for other player
+                    const otherPlayer = otherPlayers[swordData.playerId];
+                    if (otherPlayer) {
+                        // Create sword at the position sent by server
+                        const sword = self.add.image(
+                            swordData.x,
+                            swordData.y,
+                            'sword'
+                        );
+                        
+                        // Store the position data and player reference
+                        sword.ownerPlayer = otherPlayer;
+                        sword.offsetX = swordData.x - otherPlayer.x;
+                        sword.offsetY = swordData.y - otherPlayer.y;
+                        
+                        // Set sword properties
+                        sword.setDepth(15);
+                        sword.setRotation(swordData.rotation);
+                        sword.setOrigin(0.5, 0.75);
+                        
+                        // Setup update callback to keep sword aligned with player
+                        const updateSwordPosition = () => {
+                            if (sword.active && sword.ownerPlayer.active) {
+                                sword.x = sword.ownerPlayer.x + sword.offsetX;
+                                sword.y = sword.ownerPlayer.y + sword.offsetY;
+                            }
+                        };
+                        
+                        // Add to scene update event
+                        const updateEvent = self.events.on('update', updateSwordPosition);
+                        
+                        // Create swing animation
+                        self.tweens.add({
+                            targets: sword,
+                            angle: sword.angle + 45,
+                            duration: 200,
+                            yoyo: true,
+                            onComplete: function() {
+                                self.tweens.add({
+                                    targets: sword,
+                                    alpha: 0,
+                                    duration: 200,
+                                    onComplete: function() {
+                                        // Remove the update event when sword is destroyed
+                                        self.events.off('update', updateSwordPosition);
+                                        sword.destroy();
+                                    }
+                                });
+                            }
+                        });
+                    }
+                }
+            });
+
+            // Add this inside the socket event setup section
+            socket.on('playerSwordHit', function(hitInfo) {
+                // If we were hit by a sword
+                if (hitInfo.hitPlayerId === playerId) {
+                    // Decrease health
+                    if (playerHealth > 0) {
+                        playerHealth--;
+                        updateHealthBar();
+                        
+                        // Check if player is defeated
+                        if (playerHealth <= 0 && !isDefeated) {
+                            handlePlayerDefeat(self);
+                        }
+                    }
+                    
+                    // Create visual effect
+                    createHitEffect(player);
+                } else if (otherPlayers[hitInfo.hitPlayerId]) {
+                    // Create visual effect for the hit player
+                    createHitEffect(otherPlayers[hitInfo.hitPlayerId]);
+                }
+            });
         }
 
         function createPlayer(scene, playerInfo) {
@@ -365,6 +608,10 @@
             
             // Always ensure player is on top with higher depth
             player.setDepth(10);
+            
+            // Initialize player properties
+            player.health = playerHealth;
+            player.ammo = ammoCounter;
             
             // Setup collision with projectiles - with proper filter function
             scene.physics.add.overlap(projectiles, player, projectileHitPlayer, function(projectile, playerObj) {
@@ -386,9 +633,69 @@
             // Set depth to be above projectiles
             otherPlayer.setDepth(10);
             
+            // Initialize other player properties (health and ammo)
+            otherPlayer.health = maxHealth;
+            otherPlayer.ammo = maxAmmo;
+            
+            // Create a health bar for this player
+            createOtherPlayerHealthBar(scene, otherPlayer);
+            
             // Add to tracking objects
             otherPlayers[playerInfo.id] = otherPlayer;
             otherPlayersGroup.add(otherPlayer);
+        }
+        
+        // Function to create health bar above other players
+        function createOtherPlayerHealthBar(scene, otherPlayer) {
+            // Create a container to hold health bar elements
+            otherPlayer.healthBarContainer = scene.add.container(otherPlayer.x, otherPlayer.y - 35);
+            
+            // Create health bar background
+            const barWidth = 40;
+            const barHeight = 5;
+            otherPlayer.healthBarBg = scene.add.rectangle(
+                0, 0, barWidth, barHeight, 0x000000, 0.8
+            );
+            
+            // Create health bar fill
+            otherPlayer.healthBarFill = scene.add.rectangle(
+                0, 0, barWidth, barHeight, 0x00ff00, 1
+            );
+            
+            // Add elements to container
+            otherPlayer.healthBarContainer.add(otherPlayer.healthBarBg);
+            otherPlayer.healthBarContainer.add(otherPlayer.healthBarFill);
+            
+            // Set initial health display
+            updateOtherPlayerHealthBar(otherPlayer);
+            
+            // Set container depth to be above player
+            otherPlayer.healthBarContainer.setDepth(15);
+        }
+        
+        // Function to update other player health bars
+        function updateOtherPlayerHealthBar(otherPlayer) {
+            if (otherPlayer && otherPlayer.healthBarFill) {
+                // Calculate health percentage
+                const healthPercent = otherPlayer.health / maxHealth;
+                
+                // Update fill width based on health
+                const barWidth = 40;
+                otherPlayer.healthBarFill.width = barWidth * healthPercent;
+                
+                // Update color based on health level
+                if (healthPercent > 0.6) {
+                    otherPlayer.healthBarFill.fillColor = 0x00ff00; // Green
+                } else if (healthPercent > 0.3) {
+                    otherPlayer.healthBarFill.fillColor = 0xffff00; // Yellow
+                } else {
+                    otherPlayer.healthBarFill.fillColor = 0xff0000; // Red
+                }
+                
+                // Update position to follow player
+                otherPlayer.healthBarContainer.x = otherPlayer.x;
+                otherPlayer.healthBarContainer.y = otherPlayer.y - 35;
+            }
         }
 
         function createHitEffect(targetPlayer) {
@@ -439,35 +746,56 @@
         function projectileHitPlayer(projectile, playerHit) {
             // Debug info
             console.log("Checking collision between projectile and player");
-            console.log("Projectile ID:", projectile.playerId);
-            console.log("Player ID:", playerHit.playerId || playerId);
+            console.log("Projectile owner ID:", projectile.playerId);
+            console.log("Hit player ID:", playerHit.playerId || playerId);
             
-            // Ignore collisions with the player who fired the projectile
-            if (projectile.playerId && projectile.playerId === (playerHit.playerId || playerId)) {
-                console.log("Ignoring self-collision");
-                return;
+            // Always ignore collisions with the owner of the projectile
+            if (projectile.playerId === playerId && playerHit === player) {
+                console.log("Player hit by own projectile - ignoring");
+                return false;
             }
             
-            // Double-check for local player - make sure we don't hit ourselves
-            if (playerHit === player && projectile.playerId === playerId) {
-                console.log("Ignoring local player self-hit");
-                return;
+            // For other players, check by ID
+            if (projectile.playerId === playerHit.playerId) {
+                console.log("Other player hit by own projectile - ignoring");
+                return false;
             }
             
-            // Destroy the projectile
-            projectile.setActive(false);
-            projectile.setVisible(false);
+            // Check for hit cooldown for local player
+            const currentTime = Date.now();
+            if (playerHit === player && currentTime - lastHitTime < hitCooldown) {
+                console.log("Hit cooldown active, ignoring hit");
+                return false;
+            }
+            
+            // Skip if projectile is already inactive
+            if (!projectile.active) {
+                return false;
+            }
+            
+            // Destroy the projectile immediately
+            destroyProjectile(projectile);
+            
+            // Notify server to destroy projectile
+            socket.emit('destroyProjectile', {
+                projectileId: projectile.id
+            });
             
             // Emit hit event
             if (playerHit === player) {
+                // Update hit cooldown time
+                lastHitTime = currentTime;
+                
                 socket.emit('playerHit', {
                     hitPlayerId: playerId,
                     shooterId: projectile.playerId || 'unknown'
                 });
                 
-                // Update local hit counter
-                hitCounter++;
-                updateHitCounterText();
+                // Update local health
+                if (playerHealth > 0) {
+                    playerHealth--;
+                    updateHealthBar();
+                }
                 
                 // Create visual effect only - no changes to the actual player object
                 createHitEffect(player);
@@ -481,10 +809,137 @@
                 // Create visual effect for other player
                 createHitEffect(playerHit);
             }
+            
+            return true;
         }
 
-        function updateHitCounterText() {
-            hitCounterText.setText('Hits: ' + hitCounter);
+        // Create health bar UI function
+        function createHealthBar(scene) {
+            healthBarUI = {
+                container: scene.add.container(16, 26),
+                background: scene.add.rectangle(50, 0, 110, 25, 0x000000, 0.7),
+                label: scene.add.text(50, -20, 'Health:', { 
+                    fontSize: '16px', 
+                    fill: '#fff'
+                }),
+                slots: []
+            };
+            
+            // Add background to container
+            healthBarUI.container.add(healthBarUI.background);
+            healthBarUI.container.add(healthBarUI.label);
+            
+            // Create 5 health slots
+            for (let i = 0; i < maxHealth; i++) {
+                const healthSlot = scene.add.rectangle(
+                    15 + (i * 18), 0,     // x, y position
+                    15, 15,               // width, height
+                    0x00ff00,             // color when full
+                    1                     // alpha
+                );
+                
+                healthBarUI.slots.push(healthSlot);
+                healthBarUI.container.add(healthSlot);
+            }
+            
+            // Fix to camera
+            healthBarUI.container.setScrollFactor(0);
+            
+            // Initial update to show full health
+            updateHealthBar();
+            
+            // Create defeat text (initially hidden)
+            defeatText = scene.add.text(
+                scene.cameras.main.width / 2, 
+                scene.cameras.main.height / 2,
+                'DEFEATED', 
+                {
+                    fontSize: '64px',
+                    fontWeight: 'bold',
+                    fill: '#ff0000',
+                    stroke: '#000',
+                    strokeThickness: 6,
+                    shadow: { offsetX: 2, offsetY: 2, color: '#000', blur: 2, stroke: true, fill: true }
+                }
+            );
+            defeatText.setOrigin(0.5); // Center the text
+            defeatText.setScrollFactor(0); // Fix to camera
+            defeatText.setDepth(100); // Make sure it appears on top
+            defeatText.setVisible(false); // Hide initially
+        }
+        
+        // Function to handle player defeat
+        function handlePlayerDefeat(scene) {
+            isDefeated = true;
+            
+            // Disable player input during defeat
+            if (player) {
+                player.setActive(false);
+                player.setTint(0xff0000); // Make player red
+            }
+            
+            // Show the defeat text
+            if (defeatText) {
+                defeatText.setVisible(true);
+                
+                // Add a cool animation effect
+                scene.tweens.add({
+                    targets: defeatText,
+                    scaleX: 1.2,
+                    scaleY: 1.2,
+                    duration: 500,
+                    yoyo: true,
+                    repeat: 3
+                });
+                
+                // Hide defeat text and reset player after delay
+                scene.time.delayedCall(2000, function() {
+                    resetPlayer(scene);
+                });
+            }
+            
+            // Tell server player was defeated
+            socket.emit('playerDefeated', { playerId: playerId });
+        }
+        
+        // Function to reset player after defeat
+        function resetPlayer(scene) {
+            // Hide defeat text
+            if (defeatText) {
+                defeatText.setVisible(false);
+            }
+            
+            // Re-enable player and reset health
+            if (player) {
+                player.setActive(true);
+                player.clearTint();
+                playerHealth = maxHealth;
+                updateHealthBar();
+                
+                // Reset ammo
+                ammoCounter = maxAmmo;
+                updateAmmoCounterText();
+                
+                // Tell server to respawn player
+                socket.emit('respawnPlayer', { playerId: playerId });
+            }
+            
+            isDefeated = false;
+        }
+        
+        // Update health bar display
+        function updateHealthBar() {
+            for (let i = 0; i < maxHealth; i++) {
+                if (i < playerHealth) {
+                    // Slot is filled
+                    healthBarUI.slots[i].fillColor = 0x00ff00; // Green
+                    healthBarUI.slots[i].fillAlpha = 1;
+                } else {
+                    // Slot is empty
+                    healthBarUI.slots[i].fillColor = 0xff0000; // Red
+                    healthBarUI.slots[i].fillAlpha = 0.5;
+                }
+            }
         }
         
         function updateAmmoCounterText() {
@@ -493,6 +948,12 @@
 
         function update() {
             if (!player) return; // If player not created yet, skip update
+            
+            // Skip input processing if player is defeated
+            if (isDefeated) return;
+            
+            // Update health bars of other players
+            Object.values(otherPlayers).forEach(updateOtherPlayerHealthBar);
             
             // Create input object based on cursor keys
             const inputs = {
@@ -560,11 +1021,15 @@
         }
 
         function fireProjectile() {
+            // Don't fire if player is defeated
+            if (isDefeated) return;
+            
             console.log("Firing with direction:", lastDirection); // Debug log
             
             // Only send the direction, server will handle creation
             socket.emit('fireProjectile', {
-                direction: lastDirection
+                direction: lastDirection,
+                playerId: playerId // Explicitly send player ID for double check
             });
             
             // The rest will be handled by the server and gameState updates
@@ -582,15 +1047,17 @@
                 projectile.setVisible(true);
                 projectile.body.enable = true;
                 
+                // Store projectile ID for tracking
+                projectile.id = projectileInfo.id;
+                // Explicitly store which player fired this projectile
+                projectile.playerId = projectileInfo.playerId;
+                
                 // Smaller collision box
                 projectile.body.setSize(16, 16);
                 projectile.body.setOffset(42, 42);
                 
                 // Set projectile to a lower depth than players
                 projectile.setDepth(0);
-                
-                // Store which player fired this projectile
-                projectile.playerId = projectileInfo.playerId;
                 
                 // Set initial frame before animation
                 projectile.setFrame(0);
@@ -600,17 +1067,203 @@
                 
                 projectile.setVelocity(projectileInfo.velocityX, projectileInfo.velocityY);
                 
-                // Destroy projectile when it goes off screeconson
+                // Destroy projectile when it goes off screen
                 projectile.body.onWorldBounds = true;
                 projectile.body.world.on('worldbounds', (body) => {
                     if (body.gameObject === projectile) {
-                        projectile.setActive(false);
-                        projectile.setVisible(false);
+                        destroyProjectile(projectile);
                     }
                 });
+                
+                // Store in the projectiles map
+                if (projectile.id) {
+                    projectilesMap[projectile.id] = projectile;
+                }
+                
+                console.log("Created projectile with ID:", projectile.id, "fired by player:", projectile.playerId);
             }
             
             return projectile;
+        }
+        
+        // Helper function to destroy projectiles properly
+        function destroyProjectile(projectile) {
+            if (!projectile || !projectile.active) return;
+            
+            projectile.setActive(false);
+            projectile.setVisible(false);
+            
+            if (projectile.id && projectilesMap[projectile.id]) {
+                delete projectilesMap[projectile.id];
+            }
+        }
+
+        // Function to use the sword
+        function useSword(scene) {
+            // Don't use sword if player is defeated
+            if (isDefeated || !player) return;
+            
+            // Check cooldown
+            const currentTime = Date.now();
+            if (currentTime - lastSwordTime < swordCooldown) {
+                console.log("Sword cooldown active");
+                return;
+            }
+            
+            // Update last sword time
+            lastSwordTime = currentTime;
+            
+            // Reset the hit players tracking for this new sword swing
+            playersHitBySword = {};
+            
+            console.log("Using sword in direction:", lastDirection);
+            
+            // Calculate position in front of player based on direction
+            let offsetX = 0;
+            let offsetY = 0;
+            let rotation = 0;
+            const offsetDistance = 30;
+            
+            // Set position and rotation based on direction
+            if (lastDirection === 'up') {
+                offsetY = -offsetDistance;
+                rotation = -Math.PI/2; // 270 degrees
+            } else if (lastDirection === 'down') {
+                offsetY = offsetDistance;
+                rotation = Math.PI/2; // 90 degrees
+            } else if (lastDirection === 'left') {
+                offsetX = -offsetDistance;
+                rotation = Math.PI; // 180 degrees
+            } else if (lastDirection === 'right') {
+                offsetX = offsetDistance;
+                rotation = 0; // 0 degrees
+            } else if (lastDirection === 'up-left') {
+                offsetX = -offsetDistance * 0.7;
+                offsetY = -offsetDistance * 0.7;
+                rotation = -Math.PI * 0.75; // 225 degrees
+            } else if (lastDirection === 'up-right') {
+                offsetX = offsetDistance * 0.7;
+                offsetY = -offsetDistance * 0.7;
+                rotation = -Math.PI/4; // 315 degrees
+            } else if (lastDirection === 'down-left') {
+                offsetX = -offsetDistance * 0.7;
+                offsetY = offsetDistance * 0.7;
+                rotation = Math.PI * 0.75; // 135 degrees
+            } else if (lastDirection === 'down-right') {
+                offsetX = offsetDistance * 0.7;
+                offsetY = offsetDistance * 0.7;
+                rotation = Math.PI/4; // 45 degrees
+            }
+            
+            // Create sword sprite at calculated position
+            const sword = scene.add.image(
+                player.x + offsetX,
+                player.y + offsetY,
+                'sword'
+            );
+            
+            // Store the offset values on the sword object to use for updating position
+            sword.offsetX = offsetX;
+            sword.offsetY = offsetY;
+            
+            // Set sword properties
+            sword.setDepth(15);
+            sword.setRotation(rotation);
+            sword.setOrigin(0.5, 0.75); // Set origin to bottom center for better rotation
+            
+            // Setup update callback to keep sword aligned with player
+            const updateSwordPosition = () => {
+                if (sword.active && player.active) {
+                    sword.x = player.x + sword.offsetX;
+                    sword.y = player.y + sword.offsetY;
+                }
+            };
+            
+            // Add to scene update event
+            const updateEvent = scene.events.on('update', updateSwordPosition);
+            
+            // Create physics body for sword to enable collisions
+            scene.physics.world.enable(sword);
+            sword.body.setSize(40, 60); // Increased collision size for better hit detection
+            
+            // Adjust the collision box position based on the direction
+            if (lastDirection === 'up') {
+                sword.body.setOffset(-20, -30); // Offset for up direction
+            } else if (lastDirection === 'down') {
+                sword.body.setOffset(-20, 0); // Offset for down direction
+            } else if (lastDirection === 'left') {
+                sword.body.setOffset(-40, -20); // Offset for left direction
+            } else if (lastDirection === 'right') {
+                sword.body.setOffset(0, -20); // Offset for right direction
+            } else if (lastDirection.includes('-')) {
+                // For diagonal directions, use a more centered offset
+                sword.body.setOffset(-20, -20);
+            }
+            
+            // Check for collisions with other players
+            const swordHitPlayer = (sword, otherPlayer) => {
+                // Add debug logging
+                console.log("Checking sword collision with player:", otherPlayer.playerId);
+                
+                // Only register hit if it's a different player
+                if (otherPlayer.playerId !== playerId) {
+                    // Check if this player was already hit by this sword swing
+                    if (playersHitBySword[otherPlayer.playerId]) {
+                        console.log("Player already hit by this sword swing");
+                        return false;
+                    }
+                    
+                    console.log("SWORD HIT DETECTED! Player:", otherPlayer.playerId);
+                    
+                    // Mark this player as hit by this sword swing
+                    playersHitBySword[otherPlayer.playerId] = true;
+                    
+                    // Notify server about the sword hit
+                    socket.emit('swordHit', {
+                        hitPlayerId: otherPlayer.playerId,
+                        attackerId: playerId
+                    });
+                    
+                    // Create hit effect on the other player
+                    createHitEffect(otherPlayer);
+                    
+                    return true;
+                }
+                return false;
+            };
+            
+            // Add overlap detection between sword and other players
+            scene.physics.add.overlap(sword, otherPlayersGroup, swordHitPlayer, null, scene);
+            
+            // Create animation for sword swing
+            scene.tweens.add({
+                targets: sword,
+                angle: sword.angle + 45, // Swing 45 degrees
+                duration: 200,
+                yoyo: true,
+                onComplete: function() {
+                    // Add another short animation before removing
+                    scene.tweens.add({
+                        targets: sword,
+                        alpha: 0,
+                        duration: 200,
+                        onComplete: function() {
+                            // Remove the update event when sword is destroyed
+                            scene.events.off('update', updateSwordPosition);
+                            sword.destroy();
+                        }
+                    });
+                }
+            });
+            
+            // Notify server that sword was used (for multiplayer)
+            socket.emit('swordUsed', {
+                playerId: playerId,
+                x: player.x + offsetX,
+                y: player.y + offsetY,
+                rotation: rotation,
+                direction: lastDirection
+            });
         }
     </script>
 </body>
