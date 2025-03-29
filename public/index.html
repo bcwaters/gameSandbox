@@ -65,6 +65,9 @@
         let playersHitBySword = {}; // Track players already hit by current sword
         let playerNameText; // Text to display player name above player
         let isInputFocused = false; // Track if text input has focus
+        let shootSound; // Sound effect for shooting
+        let hitSound; // Sound effect for being hit
+        let swordSound; // Sound effect for sword attacks
 
         // Handle name input
         const nameInput = document.getElementById('playerName');
@@ -149,6 +152,12 @@
             
             // Load sword image
             this.load.image('sword', 'assets/Swords/sword.png');
+            
+            // Load sound effects
+            console.log('Note: You need to replace the placeholder sound files in the public/sounds folder with real MP3 sound files.');
+            this.load.audio('shoot', 'sounds/shoot.mp3');
+            this.load.audio('hit', 'sounds/hit.mp3');
+            this.load.audio('sword-slash', 'sounds/sword-slash.mp3');
         }
 
         function create() {
@@ -157,6 +166,24 @@
             
             // Create physics groups
             otherPlayersGroup = this.physics.add.group();
+            
+            // Initialize sound effects
+            try {
+                shootSound = this.sound.add('shoot');
+                hitSound = this.sound.add('hit');
+                swordSound = this.sound.add('sword-slash');
+                
+                // Add event handlers for when sounds fail to load
+                this.sound.once('loaderror', function(soundKey, error) {
+                    console.error('Error loading sound:', soundKey, error);
+                });
+            } catch (error) {
+                console.error('Error initializing sounds:', error);
+                // Set to null to avoid errors when trying to play sounds
+                shootSound = null;
+                hitSound = null;
+                swordSound = null;
+            }
             
             // Important: Use separate renderer for projectiles and adjust renderer settings
             projectiles = this.physics.add.group({
@@ -383,13 +410,18 @@
                         playerHealth--; // Projectiles do 1 damage
                         updateHealthBar();
                         
+                        // Play hit sound effect
+                        if (hitSound) {
+                            hitSound.play({ volume: 0.8 });
+                        }
+                        
                         // Check if player is defeated
                         if (playerHealth <= 0 && !isDefeated) {
                             handlePlayerDefeat(self);
                         }
                     }
                     
-                    // Create visual effect only
+                    // Create visual effect only - no changes to the actual player object
                     createHitEffect(player);
                 } else if (otherPlayers[hitInfo.hitPlayerId]) {
                     // Create visual effect for the hit player
@@ -721,6 +753,11 @@
                         
                         updateHealthBar();
                         
+                        // Play hit sound effect
+                        if (hitSound) {
+                            hitSound.play({ volume: 0.8 });
+                        }
+                        
                         // Check if player is defeated
                         if (playerHealth <= 0 && !isDefeated) {
                             handlePlayerDefeat(self);
@@ -966,6 +1003,11 @@
                 if (playerHealth > 0) {
                     playerHealth--; // Projectiles do 1 damage
                     updateHealthBar();
+                    
+                    // Play hit sound effect
+                    if (hitSound) {
+                        hitSound.play({ volume: 0.8 });
+                    }
                 }
                 
                 // Create visual effect only - no changes to the actual player object
@@ -1220,6 +1262,11 @@
             
             console.log("Firing with direction:", lastDirection); // Debug log
             
+            // Play shoot sound effect
+            if (shootSound) {
+                shootSound.play({ volume: 0.5 });
+            }
+            
             // Only send the direction, server will handle creation
             socket.emit('fireProjectile', {
                 direction: lastDirection,
@@ -1306,6 +1353,11 @@
             
             // Update last sword time
             lastSwordTime = currentTime;
+            
+            // Play sword sound effect
+            if (swordSound) {
+                swordSound.play({ volume: 0.6 });
+            }
             
             // Reset the hit players tracking for this new sword swing
             playersHitBySword = {};
