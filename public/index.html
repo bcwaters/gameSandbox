@@ -4,162 +4,576 @@
     <title>Directional Shooter</title>
     <script src="/socket.io/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js"></script>
+    <script src="js/config/GameConfig.js"></script>
+    <script src="js/managers/AnimationManager.js"></script>
+    <script src="js/loaders/AssetLoader.js"></script>
     <style>
         body { margin: 0; display: flex; justify-content: center; }
     </style>
 </head>
 <body>
     <script>
-        const config = {
-            type: Phaser.AUTO,
-            width: 800,
-            height: 600,
-            scene: {
-                preload: preload,
-                create: create,
-                update: update
-            },
-            physics: {
-                default: 'arcade',
-                arcade: {
-                    debug: false,
-                    gravity: { y: 0 }
-                }
-            }
-        };
+        // Connect to the server
+        const socket = io();
+        
+        const config = GameConfig.getConfig();
 
         const game = new Phaser.Game(config);
 
         let player;
         let cursors;
         let projectiles;
+        let projectilesMap = {}; // Map to track projectiles by ID
         let lastDirection = 'down';
+        let otherPlayers = {}; // Store references to other players
+        let playerId; // Store our socket ID
+        let hitCounter = 0; // Count how many times player has been hit
+        let hitCounterText; // Text to display hit counter
+        let ammoCounter = 10; // Starting ammo amount.
+        let maxAmmo = 10; // Maximum ammo capacity
+        let ammoCounterText; // Text to display ammo counter
+        let reloadKey; // Key for reloading
+        let otherPlayersGroup; // Group for collision detection
+        let lastHitTime = 0;
+        let playerLastInputs = {};
 
         function preload() {
-            // Add this to see loading errors
-            this.load.on('loaderror', function(file) {
-                console.error('Error loading asset:', file.src);
-            });
-            
-            // Load your properly formatted character sprite sheet
-            this.load.spritesheet('character', 
-                'sprites/character_1.png', 
-                { 
-                    frameWidth: 18,  // Adjust if your sprite has different dimensions
-                    frameHeight: 20  // Adjust if your sprite has different dimensions
-                }
-            );
-            this.load.image('projectile', 'sprites/ball.png');
+            AssetLoader.preloadAssets(this);
         }
 
         function create() {
-            // Create player with directional animations
-            player = this.physics.add.sprite(400, 300, 'character');
+            // Create animations for players
+            AnimationManager.createAnimations(this);
             
-            // Create animation for each direction based on your custom layout
-            // Row 1: Up animation
-            this.anims.create({
-                key: 'walk-up',
-                frames: this.anims.generateFrameNumbers('character', { 
-                    start: 0, 
-                    end: 3  // First row - up animation
-                }),
-                frameRate: 10,
-                repeat: -1
-            });
-
-            // Row 2: Right animation
-            this.anims.create({
-                key: 'walk-right',
-                frames: this.anims.generateFrameNumbers('character', { 
-                    start: 4, 
-                    end: 7  // Second row - right animation
-                }),
-                frameRate: 10,
-                repeat: -1
-            });
-
-            // Row 3: Down animation
-            this.anims.create({
-                key: 'walk-down',
-                frames: this.anims.generateFrameNumbers('character', { 
-                    start: 8, 
-                    end: 11  // Third row - down animation
-                }),
-                frameRate: 10,
-                repeat: -1
-            });
-
-            // Row 4: Left animation
-            this.anims.create({
-                key: 'walk-left',
-                frames: this.anims.generateFrameNumbers('character', { 
-                    start: 12, 
-                    end: 15  // Fourth row - left animation
-                }),
-                frameRate: 10,
-                repeat: -1
-            });
-
-            // Create projectile group
+            // Create physics groups
+            otherPlayersGroup = this.physics.add.group();
+            
+            // Important: Use separate renderer for projectiles and adjust renderer settings
             projectiles = this.physics.add.group({
-                classType: Phaser.Physics.Arcade.Image,
+                classType: Phaser.Physics.Arcade.Sprite,
                 maxSize: 10,
-                runChildUpdate: true
+                runChildUpdate: true,
+                createCallback: function(projectile) {
+                    // Always make sure new projectiles are visible and with proper depth
+                    projectile.setDepth(0);
+                }
             });
-
+            
             // Setup input
             cursors = this.input.keyboard.createCursorKeys();
-
+            reloadKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+            
             // Shooting input
             this.input.keyboard.on('keydown-SPACE', () => {
-                fireProjectile();
+                if (ammoCounter > 0) {
+                    // Use the new fireProjectile function
+                    fireProjectile();
+                    ammoCounter--;
+                    updateAmmoCounterText();
+                }
+            });
+            
+            // Create UI for counters
+            hitCounterText = this.add.text(16, 16, 'Hits: 0', { 
+                fontSize: '18px', 
+                fill: '#fff',
+                backgroundColor: '#000',
+                padding: { x: 5, y: 5 }
+            });
+            hitCounterText.setScrollFactor(0); // Fix to camera
+            
+            ammoCounterText = this.add.text(16, 50, 'Ammo: 10/10', { 
+                fontSize: '18px', 
+                fill: '#fff',
+                backgroundColor: '#000',
+                padding: { x: 5, y: 5 }
+            });
+            ammoCounterText.setScrollFactor(0); // Fix to camera
+            
+            // MULTIPLAYER: Setup socket events
+            const self = this;
+            
+            // When connected, get our player ID
+            socket.on('connect', function() {
+                playerId = socket.id;
+                
+                console.log("playerid set", socket.id)
+            });
+            
+            // Handle new players joining
+            socket.on('currentPlayers', function(players) {
+                Object.keys(players).forEach(function(id) {
+                    if (id === playerId) {
+                        // Create our player
+                        createPlayer(self, players[id]);
+                       
+                    } else {
+                        // Create other players
+                        addOtherPlayer(self, players[id]);
+                    }
+                });
+                
+                // Setup collision between player and other players
+                if (player) {
+                    player.playerId = playerId
+                   
+                    // Add collider with custom processing to prevent pushing
+                    self.physics.add.collider(player, otherPlayersGroup, null, function(playerObj, otherPlayerObj) {
+                        // Keep track of original position before collision resolution
+                        const originalX = playerObj.x;
+                        const originalY = playerObj.y;
+                        
+                        // Let the collision be processed (return true)
+                        return true;
+                    }, self);
+                    
+                    // Add a post-update hook to reset positions if needed
+                    self.events.on('postupdate', function() {
+                        if (player.lastX !== undefined && player.lastY !== undefined) {
+                            // If player was moved by collision, restore position
+                            if (Math.abs(player.body.velocity.x) > 0 || Math.abs(player.body.velocity.y) > 0) {
+                                // Only override if the movement wasn't player-initiated
+                                if (!cursors.left.isDown && !cursors.right.isDown && 
+                                    !cursors.up.isDown && !cursors.down.isDown) {
+                                    player.setVelocity(0, 0);
+                                }
+                            }
+                        }
+                        
+                        // Store current position for next frame
+                        player.lastX = player.x;
+                        player.lastY = player.y;
+                    });
+                }
+                
+                // Setup collision between projectiles and other players
+                self.physics.add.overlap(projectiles, otherPlayersGroup, projectileHitPlayer, function(projectile, otherPlayer) {
+                    // Only register collisions for projectiles that weren't fired by the hit player
+                    return projectile.playerId !== otherPlayer.playerId;
+                }, self);
+            });
+            
+            // Handle new player joining
+            socket.on('newPlayer', function(playerInfo) {
+                addOtherPlayer(self, playerInfo);
+            });
+            
+            // Handle player disconnections
+            socket.on('playerDisconnected', function(id) {
+                if (otherPlayers[id]) {
+                    otherPlayers[id].destroy();
+                    delete otherPlayers[id];
+                }
+            });
+            
+            // Handle player position updates
+            socket.on('playerMoved', function(playerInfo) {
+                if (otherPlayers[playerInfo.id]) {
+                    // Update position
+                    otherPlayers[playerInfo.id].x = playerInfo.x;
+                    otherPlayers[playerInfo.id].y = playerInfo.y;
+                    
+                    // Update animation based on received direction
+                    if (playerInfo.moving) {
+                        otherPlayers[playerInfo.id].anims.play('walk-' + playerInfo.direction.split('-')[0], true);
+                    } else {
+                        otherPlayers[playerInfo.id].anims.pause();
+                    }
+                }
+            });
+            
+            // Handle projectiles fired by other players
+            socket.on('projectileFired', function(projectileInfo) {
+               
+                if (projectileInfo.playerId !== playerId) {
+                    createProjectile(self, projectileInfo);
+                }
+            });
+            
+            // Handle player hit notification
+            socket.on('playerHit', function(hitInfo) {
+                // If we were hit
+                if (hitInfo.hitPlayerId === playerId) {
+                    hitCounter++;
+                    updateHitCounterText();
+                    
+                    // Create visual effect only
+                    createHitEffect(player);
+                } else if (otherPlayers[hitInfo.hitPlayerId]) {
+                    // Create visual effect for the hit player
+                    createHitEffect(otherPlayers[hitInfo.hitPlayerId]);
+                }
+            });
+
+            // Listen for game state updates from server
+            socket.on('gameState', function(gameState) {
+                // Update all players
+                gameState.players.forEach(function(serverPlayer) {
+                    if (serverPlayer.id === playerId) {
+                        // Update our player's position from server
+                        if (player) {
+                            player.x = serverPlayer.x;
+                            player.y = serverPlayer.y;
+                            player.direction = serverPlayer.direction;
+                        }
+                    } else {
+                        // Update other players
+                        if (otherPlayers[serverPlayer.id]) {
+                            const otherPlayer = otherPlayers[serverPlayer.id];
+                            otherPlayer.x = serverPlayer.x;
+                            otherPlayer.y = serverPlayer.y;
+                            
+                            if (serverPlayer.moving) {
+                                otherPlayer.anims.play('walk-' + serverPlayer.direction, true);
+                            } else {
+                                otherPlayer.anims.pause();
+                            }
+                        }
+                    }
+                });
+                
+                // Update projectiles
+                gameState.projectiles.forEach(function(serverProjectile) {
+                    // Find existing projectile or create a new one
+                    let projectile = projectilesMap ? projectilesMap[serverProjectile.id] : null;
+                    
+                    if (!projectile) {
+                        projectile = projectiles.get(serverProjectile.x, serverProjectile.y, 'projectile');
+                        if (projectile) {
+                            projectile.setActive(true);
+                            projectile.setVisible(true);
+                            projectile.play('projectile-spin');
+                            
+                            // Store in map if it exists
+                            if (typeof projectilesMap !== 'undefined') {
+                                projectilesMap[serverProjectile.id] = projectile;
+                            }
+                        }
+                    } else {
+                        // Update position
+                        projectile.x = serverProjectile.x;
+                        projectile.y = serverProjectile.y;
+                    }
+                });
+            });
+
+            // Handle projectile destruction
+            socket.on('projectileDestroyed', function(projectileId) {
+                // If we have a projectiles map, find and destroy the projectile
+                if (typeof projectilesMap !== 'undefined' && projectilesMap[projectileId]) {
+                    const projectile = projectilesMap[projectileId];
+                    projectile.setActive(false);
+                    projectile.setVisible(false);
+                    delete projectilesMap[projectileId];
+                }
+            });
+
+            // When a player fires a projectile
+            socket.on('fireProjectile', (projectileData) => {
+                if (!players[socket.id]) return;
+                
+                const player = players[socket.id];
+                
+                // Make sure we have the correct direction
+                // Either use what was sent in projectileData or fall back to the player's current direction
+                const direction = projectileData.direction || player.direction;
+                
+                console.log("Firing projectile in direction:", direction); // Debug log
+                
+                // Calculate offset based on direction to prevent self-collision
+                let offsetX = 0;
+                let offsetY = 0;
+                const offsetDistance = 30;
+                
+                if (direction.includes('up')) {
+                    offsetY = -offsetDistance;
+                } else if (direction.includes('down')) {
+                    offsetY = offsetDistance;
+                }
+                
+                if (direction.includes('left')) {
+                    offsetX = -offsetDistance;
+                } else if (direction.includes('right')) {
+                    offsetX = offsetDistance;
+                }
+                
+                const projectile = {
+                    id: Date.now() + Math.random().toString(),
+                    x: player.x + offsetX,
+                    y: player.y + offsetY,
+                    velocityX: 0,
+                    velocityY: 0,
+                    playerId: socket.id
+                };
+                
+                // Set velocity based on direction - be explicit about all possible directions
+                const speed = 400;
+                
+                // Handle all eight possible directions
+                if (direction === 'up') {
+                    projectile.velocityY = -speed;
+                } else if (direction === 'down') {
+                    projectile.velocityY = speed;
+                } else if (direction === 'left') {
+                    projectile.velocityX = -speed;
+                } else if (direction === 'right') {
+                    projectile.velocityX = speed;
+                } else if (direction === 'up-left') {
+                    projectile.velocityX = -speed / Math.sqrt(2);
+                    projectile.velocityY = -speed / Math.sqrt(2);
+                } else if (direction === 'up-right') {
+                    projectile.velocityX = speed / Math.sqrt(2);
+                    projectile.velocityY = -speed / Math.sqrt(2);
+                } else if (direction === 'down-left') {
+                    projectile.velocityX = -speed / Math.sqrt(2);
+                    projectile.velocityY = speed / Math.sqrt(2);
+                } else if (direction === 'down-right') {
+                    projectile.velocityX = speed / Math.sqrt(2);
+                    projectile.velocityY = speed / Math.sqrt(2);
+                }
+                
+                // Double-check we have some velocity
+                if (projectile.velocityX === 0 && projectile.velocityY === 0) {
+                    console.log("Warning: Projectile has no velocity. Defaulting to down direction.");
+                    projectile.velocityY = speed; // Default to down if no direction matched
+                }
+                
+                // Add to projectiles array
+                projectiles.push(projectile);
+                
+                // Emit to all clients
+                io.emit('projectileFired', {
+                    id: projectile.id,
+                    x: projectile.x,
+                    y: projectile.y,
+                    velocityX: projectile.velocityX,
+                    velocityY: projectile.velocityY,
+                    playerId: socket.id
+                });
             });
         }
 
+        function createPlayer(scene, playerInfo) {
+            // Create our player
+            player = scene.physics.add.sprite(playerInfo.x, playerInfo.y, 'character');
+            player.setCollideWorldBounds(true);
+            player.body.setSize(12, 12); // Smaller collision box for player
+            player.body.setOffset(2, 6); // Center the collision box
+            
+            // Make player more resistant to being pushed
+            player.body.mass = 10;
+            
+            // Always ensure player is on top with higher depth
+            player.setDepth(10);
+            
+            // Setup collision with projectiles - with proper filter function
+            scene.physics.add.overlap(projectiles, player, projectileHitPlayer, function(projectile, playerObj) {
+                // Only register collision if it's a different player's projectile
+                return projectile.playerId !== playerId;
+            }, scene);
+        }
+
+        function addOtherPlayer(scene, playerInfo) {
+            // Create a sprite for another player
+            const otherPlayer = scene.physics.add.sprite(playerInfo.x, playerInfo.y, 'character');
+            otherPlayer.playerId = playerInfo.id;
+            otherPlayer.body.setSize(12, 12); // Smaller collision box
+            otherPlayer.body.setOffset(2, 6); // Center the collision box
+            
+            // Make other players immovable - they won't be pushed by collisions
+            otherPlayer.body.immovable = true;
+            
+            // Set depth to be above projectiles
+            otherPlayer.setDepth(10);
+            
+            // Add to tracking objects
+            otherPlayers[playerInfo.id] = otherPlayer;
+            otherPlayersGroup.add(otherPlayer);
+        }
+
+        function createHitEffect(targetPlayer) {
+            if (!targetPlayer || !targetPlayer.active) return;
+            
+            // Create a separate sprite for the hit effect
+            const hitEffect = targetPlayer.scene.add.sprite(
+                targetPlayer.x, 
+                targetPlayer.y, 
+                'character'
+            );
+            
+            // Match the appearance of the player
+            hitEffect.setFrame(targetPlayer.frame.name);
+            hitEffect.setScale(targetPlayer.scaleX, targetPlayer.scaleY);
+            hitEffect.setFlipX(targetPlayer.flipX);
+            hitEffect.setFlipY(targetPlayer.flipY);
+            
+            // Set the effect above the player
+            hitEffect.setDepth(targetPlayer.depth + 1);
+            hitEffect.setAlpha(0.7);
+            hitEffect.setTint(0xff0000);
+            
+            // Create a fade-out effect
+            targetPlayer.scene.tweens.add({
+                targets: hitEffect,
+                alpha: 0,
+                duration: 200,
+                onComplete: function() {
+                    hitEffect.destroy();
+                }
+            });
+            
+            // Track the player if it moves during the effect
+            const tracker = targetPlayer.scene.time.addEvent({
+                delay: 10,
+                repeat: 19,
+                callback: function() {
+                    if (hitEffect.active && targetPlayer.active) {
+                        hitEffect.x = targetPlayer.x;
+                        hitEffect.y = targetPlayer.y;
+                        hitEffect.setFrame(targetPlayer.frame.name);
+                    }
+                }
+            });
+        }
+
+        function projectileHitPlayer(projectile, playerHit) {
+            // Debug info
+            console.log("Checking collision between projectile and player");
+            console.log("Projectile ID:", projectile.playerId);
+            console.log("Player ID:", playerHit.playerId || playerId);
+            
+            // Ignore collisions with the player who fired the projectile
+            if (projectile.playerId && projectile.playerId === (playerHit.playerId || playerId)) {
+                console.log("Ignoring self-collision");
+                return;
+            }
+            
+            // Double-check for local player - make sure we don't hit ourselves
+            if (playerHit === player && projectile.playerId === playerId) {
+                console.log("Ignoring local player self-hit");
+                return;
+            }
+            
+            // Destroy the projectile
+            projectile.setActive(false);
+            projectile.setVisible(false);
+            
+            // Emit hit event
+            if (playerHit === player) {
+                socket.emit('playerHit', {
+                    hitPlayerId: playerId,
+                    shooterId: projectile.playerId || 'unknown'
+                });
+                
+                // Update local hit counter
+                hitCounter++;
+                updateHitCounterText();
+                
+                // Create visual effect only - no changes to the actual player object
+                createHitEffect(player);
+            } else {
+                // Notify server that another player was hit
+                socket.emit('playerHit', {
+                    hitPlayerId: playerHit.playerId,
+                    shooterId: playerId
+                });
+                
+                // Create visual effect for other player
+                createHitEffect(playerHit);
+            }
+        }
+
+        function updateHitCounterText() {
+            hitCounterText.setText('Hits: ' + hitCounter);
+        }
+        
+        function updateAmmoCounterText() {
+            ammoCounterText.setText('Ammo: ' + ammoCounter + '/' + maxAmmo);
+        }
+
         function update() {
-            const speed = 200;
+            if (!player) return; // If player not created yet, skip update
+            
+            // Create input object based on cursor keys
+            const inputs = {
+                left: cursors.left.isDown,
+                right: cursors.right.isDown,
+                up: cursors.up.isDown,
+                down: cursors.down.isDown
+            };
+            
+            // Send inputs to server
+            socket.emit('playerInput', inputs);
+            
+            // Handle local animation based on inputs
             let moving = false;
-
-            // Reset velocity
-            player.setVelocity(0);
-
-            // Horizontal movement
-            if (cursors.left.isDown) {
-                player.setVelocityX(-speed);
-                player.anims.play('walk-left', true);
-                lastDirection = 'left';
+            
+            // Track diagonal movement
+            let direction = lastDirection; // Start with current direction
+            
+            // Determine new direction based on input combination
+            if (inputs.up && inputs.left) {
+                direction = 'up-left';
                 moving = true;
-            } else if (cursors.right.isDown) {
-                player.setVelocityX(speed);
-                player.anims.play('walk-right', true);
-                lastDirection = 'right';
+            } else if (inputs.up && inputs.right) {
+                direction = 'up-right';
+                moving = true;
+            } else if (inputs.down && inputs.left) {
+                direction = 'down-left';
+                moving = true;
+            } else if (inputs.down && inputs.right) {
+                direction = 'down-right';
+                moving = true;
+            } else if (inputs.left) {
+                direction = 'left';
+                moving = true;
+            } else if (inputs.right) {
+                direction = 'right';
+                moving = true;
+            } else if (inputs.up) {
+                direction = 'up';
+                moving = true;
+            } else if (inputs.down) {
+                direction = 'down';
                 moving = true;
             }
-
-            // Vertical movement
-            if (cursors.up.isDown) {
-                player.setVelocityY(-speed);
-                player.anims.play('walk-up', true);
-                lastDirection = 'up';
-                moving = true;
-            } else if (cursors.down.isDown) {
-                player.setVelocityY(speed);
-                player.anims.play('walk-down', true);
-                lastDirection = 'down';
-                moving = true;
+            
+            // Update lastDirection if we're moving
+            if (moving) {
+                lastDirection = direction;
+                console.log("Updated direction to:", lastDirection); // Debug log
             }
-
-            // Stop animations if not moving
-            if (!moving) {
+            
+            // Set appropriate animation based on direction
+            if (moving) {
+                // For diagonal directions, choose the dominant animation
+                if (direction.includes('-')) {
+                    // Extract the primary direction for animation
+                    const primaryDir = direction.split('-')[0]; // 'up', 'down'
+                    player.anims.play('walk-' + primaryDir, true);
+                } else {
+                    player.anims.play('walk-' + direction, true);
+                }
+            } else {
                 player.anims.pause();
             }
         }
 
         function fireProjectile() {
+            console.log("Firing with direction:", lastDirection); // Debug log
+            
+            // Only send the direction, server will handle creation
+            socket.emit('fireProjectile', {
+                direction: lastDirection
+            });
+            
+            // The rest will be handled by the server and gameState updates
+        }
+
+        function createProjectile(scene, projectileInfo) {
             const projectile = projectiles.get(
-                player.x, 
-                player.y, 
+                projectileInfo.x, 
+                projectileInfo.y, 
                 'projectile'
             );
 
@@ -167,31 +581,42 @@
                 projectile.setActive(true);
                 projectile.setVisible(true);
                 projectile.body.enable = true;
-
-                // Set projectile velocity based on last direction
-                switch(lastDirection) {
-                    case 'up':
-                        projectile.setVelocity(0, -400);
-                        break;
-                    case 'down':
-                        projectile.setVelocity(0, 400);
-                        break;
-                    case 'left':
-                        projectile.setVelocity(-400, 0);
-                        break;
-                    case 'right':
-                        projectile.setVelocity(400, 0);
-                        break;
-                }
-
-                // Destroy projectile when it goes off screen
+                
+                // Smaller collision box
+                projectile.body.setSize(16, 16);
+                projectile.body.setOffset(42, 42);
+                
+                // Set projectile to a lower depth than players
+                projectile.setDepth(0);
+                
+                // Store which player fired this projectile
+                projectile.playerId = projectileInfo.playerId;
+                
+                // Set initial frame before animation
+                projectile.setFrame(0);
+                
+                // Play the animation
+                projectile.play('projectile-spin');
+                
+                projectile.setVelocity(projectileInfo.velocityX, projectileInfo.velocityY);
+                
+                // Destroy projectile when it goes off screeconson
                 projectile.body.onWorldBounds = true;
                 projectile.body.world.on('worldbounds', (body) => {
-                    body.gameObject.setActive(false);
-                    body.gameObject.setVisible(false);
+                    if (body.gameObject === projectile) {
+                        projectile.setActive(false);
+                        projectile.setVisible(false);
+                    }
                 });
             }
+            
+            return projectile;
         }
     </script>
 </body>
 </html>
+
+
+
+<!DOCTYPE html>
+<html>
