@@ -8,10 +8,28 @@
     <script src="js/managers/AnimationManager.js"></script>
     <script src="js/loaders/AssetLoader.js"></script>
     <style>
-        body { margin: 0; display: flex; justify-content: center; }
+        body { 
+            margin: 0; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            min-height: 100vh; 
+            background-color: #333;
+        }
+        canvas {
+            display: block;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+        }
     </style>
 </head>
 <body>
+    <div id="nameInputContainer" style="position: absolute; top: 10px; left: 10px; z-index: 100; background-color: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; color: white; transition: all 0.3s ease;">
+        <label for="playerName">Your Name: </label>
+        <input type="text" id="playerName" maxlength="12" style="margin-right: 10px; padding: 5px; border-radius: 3px; border: 1px solid #555; background-color: #222; color: white; outline: none;">
+        <button id="setNameButton" style="padding: 5px 10px; background-color: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;">Set Name</button>
+        <div style="font-size: 12px; margin-top: 5px; opacity: 0.7;">Press Enter to confirm. Focus on input will pause game controls.</div>
+    </div>
+    
     <script>
         // Connect to the server
         const socket = io();
@@ -27,6 +45,7 @@
         let lastDirection = 'down';
         let otherPlayers = {}; // Store references to other players
         let playerId; // Store our socket ID
+        let playerName = "Player"; // Default player name
         let playerHealth = 5; // Player health with 5 slots
         let maxHealth = 5; // Maximum health capacity
         let healthBarUI; // UI components for health bar
@@ -44,6 +63,82 @@
         let swordCooldown = 1000; // 1 second cooldown between sword attacks
         let lastSwordTime = 0; // Last time sword was used
         let playersHitBySword = {}; // Track players already hit by current sword
+        let playerNameText; // Text to display player name above player
+        let isInputFocused = false; // Track if text input has focus
+
+        // Handle name input
+        const nameInput = document.getElementById('playerName');
+        const setNameBtn = document.getElementById('setNameButton');
+        
+        nameInput.addEventListener('focus', function() {
+            isInputFocused = true;
+            // Visual feedback when input is focused
+            document.getElementById('nameInputContainer').style.backgroundColor = 'rgba(0,100,150,0.8)';
+            document.getElementById('nameInputContainer').style.boxShadow = '0 0 15px rgba(0,150,255,0.6)';
+            nameInput.style.backgroundColor = '#333';
+            nameInput.style.borderColor = '#0af';
+        });
+        
+        nameInput.addEventListener('blur', function() {
+            isInputFocused = false;
+            // Reset visual style when input loses focus
+            document.getElementById('nameInputContainer').style.backgroundColor = 'rgba(0,0,0,0.7)';
+            document.getElementById('nameInputContainer').style.boxShadow = 'none';
+            nameInput.style.backgroundColor = '#222';
+            nameInput.style.borderColor = '#555';
+        });
+        
+        setNameBtn.addEventListener('click', setPlayerName);
+        nameInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                setPlayerName();
+                nameInput.blur(); // Remove focus after setting name
+            }
+        });
+
+        function setPlayerName() {
+            const newName = nameInput.value.trim();
+            
+            if (newName && newName.length > 0) {
+                playerName = newName;
+                
+                // Update the name in the UI
+                if (playerNameText) {
+                    playerNameText.setText(playerName);
+                }
+                
+                // Send the name to the server
+                socket.emit('setPlayerName', { name: playerName });
+                
+                // Indicate success with style changes
+                setNameBtn.textContent = "Updated!";
+                setNameBtn.style.backgroundColor = "#2E7D32";
+                
+                // Reset button text after a short delay
+                setTimeout(() => {
+                    setNameBtn.textContent = "Set Name";
+                    setNameBtn.style.backgroundColor = "#4CAF50";
+                    // Also reduce opacity of container (optional fade effect)
+                    document.getElementById('nameInputContainer').style.opacity = '0.7';
+                }, 1500);
+                
+                // Remove focus to return to game controls
+                nameInput.blur();
+            } else {
+                // Indicate error with style changes
+                setNameBtn.textContent = "Name Required";
+                setNameBtn.style.backgroundColor = "#F44336";
+                
+                // Reset button text after a short delay
+                setTimeout(() => {
+                    setNameBtn.textContent = "Set Name";
+                    setNameBtn.style.backgroundColor = "#4CAF50";
+                }, 1500);
+                
+                // Keep focus on input
+                nameInput.focus();
+            }
+        }
 
         function preload() {
             AssetLoader.preloadAssets(this);
@@ -81,6 +176,9 @@
             
             // Add reload functionality
             reloadKey.on('down', function() {
+                // Skip if text input is focused
+                if (isInputFocused) return;
+                
                 // Only reload if we're not at max ammo
                 if (ammoCounter < maxAmmo) {
                     // Reset ammo to max
@@ -97,12 +195,18 @@
             
             // Add sword attack functionality
             swordKey.on('down', function() {
+                // Skip if text input is focused
+                if (isInputFocused) return;
+                
                 // Use the sword attack function
                 useSword(this);
             }, this);
             
             // Shooting input
             this.input.keyboard.on('keydown-SPACE', () => {
+                // Skip if text input is focused
+                if (isInputFocused) return;
+                
                 if (ammoCounter > 0) {
                     // Use the new fireProjectile function
                     fireProjectile();
@@ -216,6 +320,11 @@
                         otherPlayers[id].healthBarContainer.destroy();
                     }
                     
+                    // Clean up name text
+                    if (otherPlayers[id].nameText) {
+                        otherPlayers[id].nameText.destroy();
+                    }
+                    
                     // Destroy the player sprite
                     otherPlayers[id].destroy();
                     delete otherPlayers[id];
@@ -229,11 +338,30 @@
                     otherPlayers[playerInfo.id].x = playerInfo.x;
                     otherPlayers[playerInfo.id].y = playerInfo.y;
                     
+                    // Update all visual elements
+                    updateOtherPlayerVisuals(otherPlayers[playerInfo.id]);
+                    
                     // Update animation based on received direction
                     if (playerInfo.moving) {
                         otherPlayers[playerInfo.id].anims.play('walk-' + playerInfo.direction.split('-')[0], true);
                     } else {
                         otherPlayers[playerInfo.id].anims.pause();
+                    }
+                }
+            });
+            
+            // Handle player name updates
+            socket.on('playerNameUpdate', function(playerInfo) {
+                if (playerInfo.id === playerId) {
+                    // Update our player name if needed
+                    playerName = playerInfo.name;
+                    if (playerNameText) {
+                        playerNameText.setText(playerName);
+                    }
+                } else if (otherPlayers[playerInfo.id]) {
+                    // Update other player's name
+                    if (otherPlayers[playerInfo.id].nameText) {
+                        otherPlayers[playerInfo.id].nameText.setText(playerInfo.name);
                     }
                 }
             });
@@ -250,9 +378,9 @@
             socket.on('playerHit', function(hitInfo) {
                 // If we were hit
                 if (hitInfo.hitPlayerId === playerId) {
-                    // Decrease health
+                    // Decrease health by 1 for projectiles
                     if (playerHealth > 0) {
-                        playerHealth--;
+                        playerHealth--; // Projectiles do 1 damage
                         updateHealthBar();
                         
                         // Check if player is defeated
@@ -298,12 +426,18 @@
                             otherPlayer.x = serverPlayer.x;
                             otherPlayer.y = serverPlayer.y;
                             
+                            // Update name text position
+                            if (otherPlayer.nameText) {
+                                otherPlayer.nameText.x = otherPlayer.x;
+                                otherPlayer.nameText.y = otherPlayer.y - 30;
+                            }
+                            
                             // Update other player's health and ammo
                             otherPlayer.health = serverPlayer.health;
                             otherPlayer.ammo = serverPlayer.ammo;
                             
-                            // Update their health bar
-                            updateOtherPlayerHealthBar(otherPlayer);
+                            // Update all visual elements
+                            updateOtherPlayerVisuals(otherPlayer);
                             
                             if (serverPlayer.moving) {
                                 otherPlayer.anims.play('walk-' + serverPlayer.direction, true);
@@ -578,7 +712,13 @@
                 if (hitInfo.hitPlayerId === playerId) {
                     // Decrease health
                     if (playerHealth > 0) {
-                        playerHealth--;
+                        playerHealth -= 4; // Change from 1 to 4 damage
+                        
+                        // Ensure health doesn't go below zero
+                        if (playerHealth < 0) {
+                            playerHealth = 0;
+                        }
+                        
                         updateHealthBar();
                         
                         // Check if player is defeated
@@ -613,6 +753,26 @@
             player.health = playerHealth;
             player.ammo = ammoCounter;
             
+            // Add player name text above player
+            playerNameText = scene.add.text(playerInfo.x, playerInfo.y - 30, playerName, {
+                fontSize: '14px',
+                fill: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 2,
+                align: 'center'
+            });
+            playerNameText.setOrigin(0.5);
+            playerNameText.setDepth(11);
+            
+            // Use player name from server if available
+            if (playerInfo.name) {
+                playerName = playerInfo.name;
+                playerNameText.setText(playerName);
+                
+                // Update the input field
+                document.getElementById('playerName').value = playerName;
+            }
+            
             // Setup collision with projectiles - with proper filter function
             scene.physics.add.overlap(projectiles, player, projectileHitPlayer, function(projectile, playerObj) {
                 // Only register collision if it's a different player's projectile
@@ -636,6 +796,17 @@
             // Initialize other player properties (health and ammo)
             otherPlayer.health = maxHealth;
             otherPlayer.ammo = maxAmmo;
+            
+            // Add player name text above player
+            otherPlayer.nameText = scene.add.text(playerInfo.x, playerInfo.y - 30, playerInfo.name || "Player", {
+                fontSize: '14px',
+                fill: '#ffffff',
+                stroke: '#000000',
+                strokeThickness: 2,
+                align: 'center'
+            });
+            otherPlayer.nameText.setOrigin(0.5);
+            otherPlayer.nameText.setDepth(11);
             
             // Create a health bar for this player
             createOtherPlayerHealthBar(scene, otherPlayer);
@@ -692,7 +863,7 @@
                     otherPlayer.healthBarFill.fillColor = 0xff0000; // Red
                 }
                 
-                // Update position to follow player
+                // Always position health bar above player
                 otherPlayer.healthBarContainer.x = otherPlayer.x;
                 otherPlayer.healthBarContainer.y = otherPlayer.y - 35;
             }
@@ -793,7 +964,7 @@
                 
                 // Update local health
                 if (playerHealth > 0) {
-                    playerHealth--;
+                    playerHealth--; // Projectiles do 1 damage
                     updateHealthBar();
                 }
                 
@@ -818,7 +989,7 @@
             healthBarUI = {
                 container: scene.add.container(16, 26),
                 background: scene.add.rectangle(50, 0, 110, 25, 0x000000, 0.7),
-                label: scene.add.text(50, -20, 'Health:', { 
+                label: scene.add.text(50, -20, '', { 
                     fontSize: '16px', 
                     fill: '#fff'
                 }),
@@ -946,14 +1117,37 @@
             ammoCounterText.setText('Ammo: ' + ammoCounter + '/' + maxAmmo);
         }
 
+        function updateOtherPlayerVisuals(otherPlayer) {
+            // Update health bar
+            updateOtherPlayerHealthBar(otherPlayer);
+            
+            // Update name text position
+            if (otherPlayer.nameText) {
+                otherPlayer.nameText.x = otherPlayer.x;
+                otherPlayer.nameText.y = otherPlayer.y - 30;
+            }
+        }
+
         function update() {
             if (!player) return; // If player not created yet, skip update
             
-            // Skip input processing if player is defeated
+            // Always update visuals, even if player is defeated
+            if (player) {
+                // Update player name text position
+                if (playerNameText) {
+                    playerNameText.x = player.x;
+                    playerNameText.y = player.y - 30;
+                }
+                
+                // Always update other players' visuals on every frame
+                Object.values(otherPlayers).forEach(updateOtherPlayerVisuals);
+            }
+            
+            // Skip game controls if player is defeated
             if (isDefeated) return;
             
-            // Update health bars of other players
-            Object.values(otherPlayers).forEach(updateOtherPlayerHealthBar);
+            // Skip game controls if text input is focused
+            if (isInputFocused) return;
             
             // Create input object based on cursor keys
             const inputs = {

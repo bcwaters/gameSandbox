@@ -47,6 +47,7 @@ io.on('connection', (socket) => {
     health: MAX_HEALTH, // Initialize with full health
     ammo: MAX_AMMO,     // Initialize with full ammo
     lastHitTime: 0,     // Track last time player was hit
+    name: "Player" + Math.floor(Math.random() * 1000), // Random default name
     inputs: {
       left: false,
       right: false,
@@ -220,12 +221,12 @@ io.on('connection', (socket) => {
       
       // Decrease health if player still has health
       if (players[hitPlayerId].health > 0) {
-        players[hitPlayerId].health--;
+        // Projectiles only do 1 damage
+        players[hitPlayerId].health -= 1;
         
-        // Add death handling if needed
-        if (players[hitPlayerId].health <= 0) {
-          // Player is dead - but we'll let the client handle the visual aspect
-          console.log(`Player ${hitPlayerId} has been defeated!`);
+        // Ensure health doesn't go below zero
+        if (players[hitPlayerId].health < 0) {
+          players[hitPlayerId].health = 0;
         }
         
         // Broadcast the hit event to all players
@@ -327,7 +328,12 @@ io.on('connection', (socket) => {
       
       // Decrease health if player still has health
       if (players[hitPlayerId].health > 0) {
-        players[hitPlayerId].health--;
+        players[hitPlayerId].health -= 4;
+        
+        // Ensure health doesn't go below zero
+        if (players[hitPlayerId].health < 0) {
+          players[hitPlayerId].health = 0;
+        }
         
         // Check if player is now defeated
         if (players[hitPlayerId].health <= 0) {
@@ -342,6 +348,22 @@ io.on('connection', (socket) => {
         
         console.log(`Player ${hitPlayerId} was hit by ${attackerId}'s sword. Health now: ${players[hitPlayerId].health}`);
       }
+    }
+  });
+  
+  // Handle setting player name
+  socket.on('setPlayerName', function(data) {
+    if (players[socket.id] && data.name) {
+      // Update player name
+      players[socket.id].name = data.name.substring(0, 12); // Limit name length
+      
+      // Broadcast the updated name to all players
+      io.emit('playerNameUpdate', {
+        id: socket.id,
+        name: players[socket.id].name
+      });
+      
+      console.log(`Player ${socket.id} set name to: ${players[socket.id].name}`);
     }
   });
 });
@@ -464,7 +486,12 @@ function updateGame() {
         
         // Decrease player health
         if (player.health > 0) {
-          player.health--;
+          player.health -= 1;
+          
+          // Ensure health doesn't go below zero
+          if (player.health < 0) {
+            player.health = 0;
+          }
         }
         
         // Emit hit event - only for valid hits (not self-hits)
@@ -493,7 +520,8 @@ function updateGame() {
       direction: player.direction,
       moving: player.moving,
       health: player.health,  // Include health in state
-      ammo: player.ammo       // Include ammo in state
+      ammo: player.ammo,      // Include ammo in state
+      name: player.name       // Include name in state
     })),
     projectiles: projectiles.map(projectile => ({
       id: projectile.id,
