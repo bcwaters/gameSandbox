@@ -95,11 +95,6 @@ class MainScene extends Phaser.Scene {
             this.initSounds();
             console.log('Sound effects initialized');
             
-            // Create UI
-            console.log('Creating user interface');
-            this.ui = new UserInterface(this);
-            console.log('User interface created');
-            
             // Setup keyboard input
             console.log('Setting up keyboard input');
             this.setupInput();
@@ -110,17 +105,26 @@ class MainScene extends Phaser.Scene {
             this.setupSocketEvents();
             console.log('Socket event handlers setup completed');
             
-            // Set world bounds explicitly
-            console.log('Setting world bounds');
-            this.physics.world.setBounds(0, 0, 800, 600);
+            // Create UI first so we can get its height
+            console.log('Creating user interface');
+            this.ui = new UserInterface(this);
+            console.log('User interface created');
+            
+            // Set world bounds explicitly - adjust for UI height
+            console.log('Setting world bounds adjusted for UI');
+            const uiHeight = this.ui.UI_HEIGHT;
+            const gameWidth = this.scale.width;
+            const gameHeight = this.scale.height;
+            console.log(`Game dimensions: ${gameWidth}x${gameHeight}`);
+            this.physics.world.setBounds(0, uiHeight, gameWidth, gameHeight - uiHeight);
             
             // Add background to make sure rendering is working
             console.log('Creating background rectangle');
             const background = this.add.rectangle(
-                400, // width/2
-                300, // height/2
-                800, // width
-                600, // height
+                gameWidth / 2, // Center horizontally
+                uiHeight + (gameHeight - uiHeight) / 2, // Center of game area (below UI)
+                gameWidth, // Full width
+                gameHeight - uiHeight, // height (adjusted for UI)
                 0x222222
             );
             background.setDepth(-10);
@@ -129,7 +133,7 @@ class MainScene extends Phaser.Scene {
             console.log('Creating loading text');
             const loadingText = this.add.text(
                 this.cameras.main.width / 2,
-                this.cameras.main.height / 2,
+                uiHeight + (this.cameras.main.height - uiHeight) / 2, // Center in game area below UI
                 'Game loaded! Waiting for players...',
                 {
                     fontSize: '24px',
@@ -256,6 +260,175 @@ class MainScene extends Phaser.Scene {
                 this.ui.updateAmmoCounter(this.player.ammo);
             }
         });
+        
+        // Add mobile touch controls for small screens or mobile devices
+        this.setupMobileControls();
+    }
+    
+    setupMobileControls() {
+        // Detect if we're on a mobile device or small screen
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+                         (window.innerWidth < 800);
+        
+        if (!isMobile) return;
+        
+        console.log('Setting up mobile touch controls');
+        
+        const gameWidth = this.scale.width;
+        const gameHeight = this.scale.height;
+        const uiHeight = this.ui ? this.ui.UI_HEIGHT : 50;
+        
+        // Create transparent buttons for mobile controls
+        
+        // Movement joystick (left side)
+        const joystickRadius = 50;
+        const joystickX = joystickRadius + 20;
+        const joystickY = gameHeight - joystickRadius - 20;
+        
+        // Base circle for joystick
+        const joystickBase = this.add.circle(joystickX, joystickY, joystickRadius, 0xffffff, 0.3);
+        joystickBase.setDepth(100);
+        joystickBase.setScrollFactor(0);
+        joystickBase.setInteractive();
+        
+        // Thumb indicator for joystick
+        const joystickThumb = this.add.circle(joystickX, joystickY, joystickRadius/2, 0xffffff, 0.5);
+        joystickThumb.setDepth(101);
+        joystickThumb.setScrollFactor(0);
+        
+        // Action buttons (right side) - more spaced out
+        const buttonRadius = 40;
+        const buttonSpacing = 30; // Increased spacing between buttons
+        
+        // Shoot button (bottom right)
+        const shootButtonX = gameWidth - buttonRadius - 20;
+        const shootButtonY = gameHeight - buttonRadius - 20;
+        const shootButton = this.add.circle(shootButtonX, shootButtonY, buttonRadius, 0xff0000, 0.3);
+        shootButton.setDepth(100);
+        shootButton.setScrollFactor(0);
+        shootButton.setInteractive();
+        
+        // Sword button (to the left of shoot button)
+        const swordButtonX = shootButtonX - (buttonRadius * 2 + buttonSpacing);
+        const swordButtonY = shootButtonY;
+        const swordButton = this.add.circle(swordButtonX, swordButtonY, buttonRadius, 0x00ff00, 0.3);
+        swordButton.setDepth(100);
+        swordButton.setScrollFactor(0);
+        swordButton.setInteractive();
+        
+        // Reload button (above shoot button)
+        const reloadButtonX = shootButtonX;
+        const reloadButtonY = shootButtonY - (buttonRadius * 2 + buttonSpacing);
+        const reloadButton = this.add.circle(reloadButtonX, reloadButtonY, buttonRadius, 0x0000ff, 0.3);
+        reloadButton.setDepth(100);
+        reloadButton.setScrollFactor(0);
+        reloadButton.setInteractive();
+        
+        // Add text labels to the buttons - larger font for better readability
+        const shootLabel = this.add.text(shootButtonX, shootButtonY, 'SHOOT', {
+            fontSize: '14px', fill: '#ffffff', stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5);
+        shootLabel.setDepth(101);
+        shootLabel.setScrollFactor(0);
+        
+        const swordLabel = this.add.text(swordButtonX, swordButtonY, 'SWORD', {
+            fontSize: '14px', fill: '#ffffff', stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5);
+        swordLabel.setDepth(101);
+        swordLabel.setScrollFactor(0);
+        
+        const reloadLabel = this.add.text(reloadButtonX, reloadButtonY, 'RELOAD', {
+            fontSize: '14px', fill: '#ffffff', stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5);
+        reloadLabel.setDepth(101);
+        reloadLabel.setScrollFactor(0);
+        
+        // Virtual joystick implementation
+        this.input.on('pointerdown', (pointer) => {
+            if (pointer.x < gameWidth / 2) {
+                // Left side - joystick
+                this.joystickActive = true;
+                this.joystickPointer = pointer;
+                this.joystickStartX = joystickX;
+                this.joystickStartY = joystickY;
+            }
+        });
+        
+        this.input.on('pointermove', (pointer) => {
+            if (this.joystickActive && this.joystickPointer && this.joystickPointer.id === pointer.id) {
+                // Calculate joystick position
+                const dx = pointer.x - this.joystickStartX;
+                const dy = pointer.y - this.joystickStartY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const maxDistance = joystickRadius;
+                
+                // Normalize and cap distance
+                const normalizedDistance = Math.min(distance, maxDistance);
+                const angle = Math.atan2(dy, dx);
+                
+                // Calculate new thumb position
+                const thumbX = this.joystickStartX + normalizedDistance * Math.cos(angle);
+                const thumbY = this.joystickStartY + normalizedDistance * Math.sin(angle);
+                
+                // Update thumb position
+                joystickThumb.x = thumbX;
+                joystickThumb.y = thumbY;
+                
+                // Calculate input values (-1 to 1)
+                this.joystickInputX = (thumbX - this.joystickStartX) / maxDistance;
+                this.joystickInputY = (thumbY - this.joystickStartY) / maxDistance;
+            }
+        });
+        
+        this.input.on('pointerup', (pointer) => {
+            if (this.joystickActive && this.joystickPointer && this.joystickPointer.id === pointer.id) {
+                // Reset joystick
+                this.joystickActive = false;
+                this.joystickPointer = null;
+                this.joystickInputX = 0;
+                this.joystickInputY = 0;
+                joystickThumb.x = joystickX;
+                joystickThumb.y = joystickY;
+            }
+        });
+        
+        // Action buttons
+        shootButton.on('pointerdown', () => {
+            // Check if player exists and has ammo
+            if (this.player && this.player.ammo > 0) {
+                this.fireProjectile();
+                this.player.setAmmo(this.player.ammo - 1);
+                this.ui.updateAmmoCounter(this.player.ammo);
+            }
+        });
+        
+        swordButton.on('pointerdown', () => {
+            this.useSword();
+        });
+        
+        reloadButton.on('pointerdown', () => {
+            // Only reload if we're not at max ammo
+            if (this.player && this.player.ammo < this.player.maxAmmo) {
+                // Reset ammo to max
+                this.player.setAmmo(this.player.maxAmmo);
+                this.ui.updateAmmoCounter(this.player.ammo);
+                
+                // Send reload event to server
+                this.socketManager.reloadAmmo();
+            }
+        });
+        
+        // Store mobile controls references
+        this.mobileControls = {
+            joystickBase,
+            joystickThumb,
+            shootButton,
+            swordButton,
+            reloadButton,
+            shootLabel,
+            swordLabel,
+            reloadLabel
+        };
     }
     
     setupSocketEvents() {
@@ -1025,20 +1198,31 @@ class MainScene extends Phaser.Scene {
      * @param {Phaser.GameObjects.Sprite} obstacleSprite - The obstacle sprite
      */
     handleProjectileObstacleHit(projectileSprite, obstacleSprite) {
-        // Find projectile instance
-        let projectileId = null;
-        for (const id in this.projectiles) {
-            if (this.projectiles[id].sprite === projectileSprite) {
-                projectileId = id;
-                break;
-            }
-        }
+        // Skip if sprites are inactive
+        if (!projectileSprite.active || !obstacleSprite.active) return;
         
-        if (projectileId) {
+        // Find projectile instance by ID directly
+        const projectileId = projectileSprite.id;
+        
+        if (projectileId && this.projectiles[projectileId]) {
+            console.log('Projectile hit obstacle:', projectileId);
+            
             // Find and destroy the projectile
             const projectile = this.projectiles[projectileId];
             if (projectile) {
-                projectile.destroy();
+                try {
+                    projectile.destroy();
+                } catch (error) {
+                    console.error('Error destroying projectile:', error);
+                    // Fallback destruction if the main method fails
+                    if (projectile.sprite && projectile.sprite.body) {
+                        projectile.sprite.body.enable = false;
+                    }
+                    if (projectile.sprite) {
+                        projectile.sprite.destroy();
+                    }
+                }
+                
                 delete this.projectiles[projectileId];
             }
             
@@ -1150,8 +1334,14 @@ class MainScene extends Phaser.Scene {
     }
     
     handleProjectileHit(projectileSprite, playerHit) {
-        // Skip if projectile is already inactive
-        if (!projectileSprite.active) return;
+        // Skip if either sprite is inactive or if player is defeated
+        if (!projectileSprite.active || !playerHit.active) return;
+        
+        // Skip if local player is defeated and was hit
+        if (this.isDefeated && playerHit === this.player.sprite) {
+            console.log('Ignoring hit on defeated player');
+            return;
+        }
         
         // Get the projectile ID and owner ID from the sprite
         const projectileId = projectileSprite.id;
@@ -1177,17 +1367,37 @@ class MainScene extends Phaser.Scene {
             return;
         }
         
+        // Create impact effect at hit position
+        this.createHitImpact(projectileSprite.x, projectileSprite.y);
+        
+        // Play hit sound
+        if (this.hitSound) {
+            this.hitSound.play({ volume: 0.5 });
+        }
+        
         // Find and destroy the projectile
         const projectile = this.projectiles[projectileId];
         if (projectile) {
-            if (typeof projectile.destroy === 'function') {
-                projectile.destroy();
-            } else {
-                // Fallback if the destroy method doesn't exist
+            try {
+                if (typeof projectile.destroy === 'function') {
+                    projectile.destroy();
+                } else {
+                    // Fallback if the destroy method doesn't exist
+                    if (projectile.sprite) {
+                        projectile.sprite.destroy();
+                    }
+                }
+            } catch (error) {
+                console.error('Error destroying projectile:', error);
+                // Emergency cleanup if error occurs
+                if (projectile.sprite && projectile.sprite.body) {
+                    projectile.sprite.body.enable = false;
+                }
                 if (projectile.sprite) {
                     projectile.sprite.destroy();
                 }
             }
+            
             delete this.projectiles[projectileId];
         }
         
@@ -1540,13 +1750,22 @@ class MainScene extends Phaser.Scene {
         // Skip game controls if player is defeated or input is focused
         if (this.isDefeated || this.ui.isInputActive()) return;
         
-        // Create input object based on cursor keys
+        // Create input object based on cursor keys and mobile joystick
         const inputs = {
             left: this.cursors.left.isDown,
             right: this.cursors.right.isDown,
             up: this.cursors.up.isDown,
             down: this.cursors.down.isDown
         };
+        
+        // Add mobile joystick input if active
+        if (this.joystickActive && this.joystickInputX !== undefined && this.joystickInputY !== undefined) {
+            // Convert joystick position to directional inputs
+            if (this.joystickInputX < -0.3) inputs.left = true;
+            if (this.joystickInputX > 0.3) inputs.right = true;
+            if (this.joystickInputY < -0.3) inputs.up = true;
+            if (this.joystickInputY > 0.3) inputs.down = true;
+        }
         
         // Only send inputs if we're connected
         if (this.socketManager.connected) {

@@ -27,22 +27,64 @@ window.addEventListener('load', () => {
 function initializeGame() {
     console.log('Initializing game...');
     try {
-        // Create game configuration
+        // Detect if we're on a mobile device
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        // Get the window dimensions
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        
+        // Default game dimensions
+        let gameWidth = 800;
+        let gameHeight = 600;
+        
+        // Configure scaling based on device
         console.log('Creating game configuration');
-        const config = {
-            type: Phaser.AUTO,
-            width: 800,
-            height: 600,
-            scene: [MainScene],
-            physics: {
-                default: 'arcade',
-                arcade: {
-                    debug: false,
-                    gravity: { y: 0 }
+        
+        let config;
+        
+        // Only use dynamic scaling on mobile
+        if (isMobile) {
+            console.log('Mobile device detected, using adaptive scaling');
+            
+            // Create game configuration with mobile scaling
+            config = {
+                type: Phaser.AUTO,
+                width: gameWidth,
+                height: gameHeight,
+                scene: [MainScene],
+                physics: {
+                    default: 'arcade',
+                    arcade: {
+                        debug: false,
+                        gravity: { y: 0 }
+                    }
+                },
+                parent: 'gameContainer',
+                scale: {
+                    mode: Phaser.Scale.FIT,
+                    autoCenter: Phaser.Scale.CENTER_BOTH
                 }
-            },
-            parent: 'gameContainer'
-        };
+            };
+        } else {
+            console.log('Desktop device detected, using fixed size');
+            
+            // Create game configuration without scaling for desktop
+            config = {
+                type: Phaser.AUTO,
+                width: gameWidth,
+                height: gameHeight,
+                scene: [MainScene],
+                physics: {
+                    default: 'arcade',
+                    arcade: {
+                        debug: false,
+                        gravity: { y: 0 }
+                    }
+                },
+                parent: 'gameContainer'
+            };
+        }
         
         console.log('Creating Phaser game instance with config:', config);
         // Create the game instance

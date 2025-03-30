@@ -66,7 +66,10 @@ class ObstacleManager {
       // Add some margin to keep obstacles away from edges
       const margin = config.OBSTACLE_SIZE;
       x = Math.floor(Math.random() * (config.WORLD_WIDTH - 2 * margin)) + margin;
-      y = Math.floor(Math.random() * (config.WORLD_HEIGHT - 2 * margin)) + margin;
+      
+      // Make sure obstacles spawn below the UI navbar
+      const minY = config.UI_HEIGHT + margin;
+      y = Math.floor(Math.random() * (config.WORLD_HEIGHT - minY - margin)) + minY;
 
       validPosition = this.isValidObstaclePosition(x, y);
     }

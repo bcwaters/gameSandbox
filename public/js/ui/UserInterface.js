@@ -15,10 +15,19 @@ class UserInterface {
         this.maxHealth = 5;
         this.maxAmmo = 10;
         
+        // UI configuration
+        this.UI_HEIGHT = 50;  // Height of the UI navbar
+        this.UI_PADDING = 10; // Padding inside the navbar
+        this.UI_BG_COLOR = 0x222222; // Dark gray background
+        this.UI_BG_ALPHA = 0.8; // Semi-transparent background
+        
+        // Create UI container and background
+        this.createUIContainer();
+        
         // Create UI elements
         this.createHealthBar();
+        this.createScoreCounter(); // Changed order to Health -> Score -> Ammo
         this.createAmmoCounter();
-        this.createScoreCounter();
         this.createDefeatText();
         
         // Set up name input handlers
@@ -26,71 +35,147 @@ class UserInterface {
     }
     
     /**
+     * Create the main UI container and background
+     */
+    createUIContainer() {
+        // Create a container for all UI elements
+        this.uiContainer = this.scene.add.container(0, 0);
+        this.uiContainer.setScrollFactor(0); // Fix to camera
+        this.uiContainer.setDepth(100); // Ensure UI is always on top
+        
+        // Create background for UI navbar
+        this.uiBackground = this.scene.add.rectangle(
+            this.scene.cameras.main.width / 2, // Center horizontally
+            this.UI_HEIGHT / 2, // Position at half the height (for center alignment)
+            this.scene.cameras.main.width, // Full width
+            this.UI_HEIGHT, // Fixed height
+            this.UI_BG_COLOR,
+            this.UI_BG_ALPHA
+        );
+        
+        // Add separator line
+        this.uiSeparator = this.scene.add.rectangle(
+            this.scene.cameras.main.width / 2, // Center horizontally
+            this.UI_HEIGHT, // Bottom of navbar
+            this.scene.cameras.main.width, // Full width
+            2, // Line thickness
+            0xFFFFFF, // White line
+            0.5 // Semi-transparent
+        );
+        
+        // Add background and separator to container
+        this.uiContainer.add(this.uiBackground);
+        this.uiContainer.add(this.uiSeparator);
+    }
+    
+    /**
      * Create the health bar UI
      */
     createHealthBar() {
+        // Calculate position - left side of navbar
+        const startX = this.UI_PADDING + 50; // Padding + space for label
+        const centerY = this.UI_HEIGHT / 2;
+        
         this.healthBarUI = {
-            container: this.scene.add.container(16, 26),
-            background: this.scene.add.rectangle(50, 0, 110, 25, 0x000000, 0.7),
+            container: this.scene.add.container(0, 0),
+            label: this.scene.add.text(this.UI_PADDING, centerY, 'HP:', {
+                fontSize: '16px',
+                fill: '#FFFFFF',
+                fontStyle: 'bold'
+            }),
+            background: this.scene.add.rectangle(startX + 55, centerY, 110, 20, 0x000000, 0.5),
             slots: []
         };
         
-        // Add background to container
-        this.healthBarUI.container.add(this.healthBarUI.background);
+        // Center the label vertically
+        this.healthBarUI.label.setOrigin(0, 0.5);
+        
+        // Add elements to container
+        this.uiContainer.add(this.healthBarUI.label);
+        this.uiContainer.add(this.healthBarUI.background);
         
         // Create health slots
         for (let i = 0; i < this.maxHealth; i++) {
             const healthSlot = this.scene.add.rectangle(
-                15 + (i * 18), 0,     // x, y position
-                15, 15,               // width, height
-                0x00ff00,             // color when full
-                1                     // alpha
+                startX + 10 + (i * 18), centerY,  // x, y position
+                15, 15,                           // width, height
+                0x00ff00,                         // color when full
+                1                                 // alpha
             );
             
             this.healthBarUI.slots.push(healthSlot);
-            this.healthBarUI.container.add(healthSlot);
+            this.uiContainer.add(healthSlot);
         }
-        
-        // Fix to camera
-        this.healthBarUI.container.setScrollFactor(0);
         
         // Initial update to show full health
         this.updateHealthBar(this.maxHealth);
     }
     
     /**
-     * Create the ammo counter UI
+     * Create the score counter UI - positioned in the center of the navbar
      */
-    createAmmoCounter() {
-        this.ammoCounterText = this.scene.add.text(16, 50, `Ammo: ${this.maxAmmo}/${this.maxAmmo}`, { 
-            fontSize: '18px', 
-            fill: '#fff',
-            backgroundColor: '#000',
-            padding: { x: 5, y: 5 }
+    createScoreCounter() {
+        const centerX = this.scene.cameras.main.width / 2;
+        const centerY = this.UI_HEIGHT / 2;
+        
+        // Create a container for score elements
+        this.scoreContainer = this.scene.add.container(0, 0);
+        
+        // Create label and score text
+        this.scoreLabel = this.scene.add.text(centerX - 60, centerY, 'SCORE:', {
+            fontSize: '16px',
+            fill: '#FFFFFF',
+            fontStyle: 'bold'
         });
-        this.ammoCounterText.setScrollFactor(0); // Fix to camera
+        this.scoreLabel.setOrigin(0, 0.5);
+        
+        this.scoreCounterText = this.scene.add.text(centerX, centerY, '0', { 
+            fontSize: '20px', 
+            fill: '#ffff00', // Yellow text for score
+            fontStyle: 'bold'
+        });
+        this.scoreCounterText.setOrigin(0, 0.5);
+        
+        // Add to UI container
+        this.uiContainer.add(this.scoreLabel);
+        this.uiContainer.add(this.scoreCounterText);
     }
     
     /**
-     * Create the score counter UI
+     * Create the ammo counter UI - positioned on the right side of the navbar
      */
-    createScoreCounter() {
-        this.scoreCounterText = this.scene.add.text(16, 80, 'Score: 0', { 
-            fontSize: '18px', 
-            fill: '#ffff00', // Yellow text for score
-            backgroundColor: '#000',
-            padding: { x: 5, y: 5 }
+    createAmmoCounter() {
+        const rightSide = this.scene.cameras.main.width - this.UI_PADDING;
+        const centerY = this.UI_HEIGHT / 2;
+        
+        // Create ammo label and counter
+        this.ammoLabel = this.scene.add.text(rightSide - 120, centerY, 'AMMO:', {
+            fontSize: '16px',
+            fill: '#FFFFFF',
+            fontStyle: 'bold'
         });
-        this.scoreCounterText.setScrollFactor(0); // Fix to camera
+        this.ammoLabel.setOrigin(0, 0.5);
+        
+        this.ammoCounterText = this.scene.add.text(rightSide - 60, centerY, `${this.maxAmmo}/${this.maxAmmo}`, { 
+            fontSize: '18px', 
+            fill: '#00ffff', // Cyan text for ammo
+            fontStyle: 'bold'
+        });
+        this.ammoCounterText.setOrigin(0, 0.5);
+        
+        // Add to UI container
+        this.uiContainer.add(this.ammoLabel);
+        this.uiContainer.add(this.ammoCounterText);
     }
     
     /**
      * Create the defeat text (initially hidden)
      */
     createDefeatText() {
+        // Position in center of game area (below UI)
         this.defeatText = this.scene.add.text(
             this.scene.cameras.main.width / 2, 
-            this.scene.cameras.main.height / 2,
+            this.UI_HEIGHT + (this.scene.cameras.main.height - this.UI_HEIGHT) / 2,
             'DEFEATED', 
             {
                 fontSize: '64px',
@@ -195,6 +280,17 @@ class UserInterface {
                 // Slot is filled
                 this.healthBarUI.slots[i].fillColor = 0x00ff00; // Green
                 this.healthBarUI.slots[i].fillAlpha = 1;
+                
+                // Add a slight pulsing effect if health is low (≤ 2)
+                if (health <= 2) {
+                    this.scene.tweens.add({
+                        targets: this.healthBarUI.slots[i],
+                        alpha: 0.7,
+                        duration: 300,
+                        yoyo: true,
+                        repeat: 1
+                    });
+                }
             } else {
                 // Slot is empty
                 this.healthBarUI.slots[i].fillColor = 0xff0000; // Red
@@ -208,7 +304,24 @@ class UserInterface {
      * @param {number} ammo - The current ammo value
      */
     updateAmmoCounter(ammo) {
-        this.ammoCounterText.setText(`Ammo: ${ammo}/${this.maxAmmo}`);
+        this.ammoCounterText.setText(`${ammo}/${this.maxAmmo}`);
+        
+        // Change color based on ammo level
+        if (ammo === 0) {
+            this.ammoCounterText.setColor('#ff0000'); // Red when empty
+        } else if (ammo <= 3) {
+            this.ammoCounterText.setColor('#ffff00'); // Yellow when low
+        } else {
+            this.ammoCounterText.setColor('#00ffff'); // Cyan when sufficient
+        }
+        
+        // Add a small flash effect when ammo changes
+        this.scene.tweens.add({
+            targets: this.ammoCounterText,
+            alpha: 0.5,
+            duration: 100,
+            yoyo: true
+        });
     }
     
     /**
@@ -217,14 +330,15 @@ class UserInterface {
      */
     updateScoreCounter(score) {
         if (this.scoreCounterText) {
-            this.scoreCounterText.setText(`Score: ${score}`);
+            this.scoreCounterText.setText(`${score}`);
             
-            // Add a small animation effect
+            // Add a pop-up animation effect
             this.scene.tweens.add({
                 targets: this.scoreCounterText,
-                scale: 1.2,
-                duration: 100,
-                yoyo: true
+                scale: 1.3,
+                duration: 150,
+                yoyo: true,
+                ease: 'Back.easeOut'
             });
         }
     }

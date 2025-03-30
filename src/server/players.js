@@ -19,7 +19,7 @@ class PlayerManager {
     this.players[socketId] = {
       id: socketId,
       x: Math.floor(Math.random() * 700) + 50,
-      y: Math.floor(Math.random() * 500) + 50,
+      y: Math.floor(Math.random() * (500 - config.UI_HEIGHT)) + config.UI_HEIGHT + 50, // Account for UI height
       direction: 'down',
       moving: false,
       health: config.MAX_HEALTH,

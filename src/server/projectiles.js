@@ -18,8 +18,8 @@ class ProjectileManager {
    * @returns {Object} The projectile object
    */
   createProjectile(playerId, player, direction) {
-    // Skip if player is out of ammo
-    if (player.ammo <= 0) return null;
+    // Skip if player is out of ammo or defeated
+    if (player.ammo <= 0 || player.defeated) return null;
     
     // Decrease player's ammo
     player.ammo--;
@@ -27,7 +27,7 @@ class ProjectileManager {
     // Calculate offset based on direction to prevent self-collision
     let offsetX = 0;
     let offsetY = 0;
-    const offsetDistance = 30;
+    const offsetDistance = 40; // Increased offset to better prevent self-collisions
     
     // Set position offsets based on direction
     if (direction === 'up') {
@@ -130,20 +130,35 @@ class ProjectileManager {
    * @param {Object} obstacleManager - The obstacle manager for collision detection
    */
   update(deltaTime, players, onHit, obstacleManager) {
+    // Apply a maximum delta time to prevent large position jumps during lag
+    const maxDeltaTime = 0.05; // 50ms maximum
+    const clampedDeltaTime = Math.min(deltaTime, maxDeltaTime);
+    
+    // Keep track of processed projectiles to prevent duplicate processing
+    const processedProjectiles = new Set();
+    
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i];
+      
+      // Skip if already processed or invalid
+      if (!projectile || !projectile.id || processedProjectiles.has(projectile.id)) {
+        continue;
+      }
+      
+      // Mark as processed
+      processedProjectiles.add(projectile.id);
       
       // Store original position for obstacle collision check
       const originalX = projectile.x;
       const originalY = projectile.y;
       
-      // Update position
-      projectile.x += projectile.velocityX * deltaTime;
-      projectile.y += projectile.velocityY * deltaTime;
+      // Update position with clamped delta time to prevent large jumps
+      projectile.x += projectile.velocityX * clampedDeltaTime;
+      projectile.y += projectile.velocityY * clampedDeltaTime;
       
-      // Check if out of bounds
-      if (projectile.x < 0 || projectile.x > config.WORLD_WIDTH || 
-          projectile.y < 0 || projectile.y > config.WORLD_HEIGHT) {
+      // Check if out of bounds - add small buffer to ensure cleanup
+      if (projectile.x < -10 || projectile.x > config.WORLD_WIDTH + 10 || 
+          projectile.y < -10 || projectile.y > config.WORLD_HEIGHT + 10) {
         // Remove projectile
         this.projectiles.splice(i, 1);
         this.io.emit('projectileDestroyed', projectile.id);
@@ -180,7 +195,9 @@ class ProjectileManager {
         
         const player = players[playerId];
         
-        // Skip if player is in hit cooldown
+        // Skip if player is defeated or in hit cooldown
+        if (player.defeated) continue;
+        
         const currentTime = Date.now();
         if (currentTime - player.lastHitTime < config.HIT_COOLDOWN) continue;
         
@@ -188,8 +205,8 @@ class ProjectileManager {
         const dy = player.y - projectile.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
-        // If collision detected
-        if (distance < 20) { // Approximate collision radius
+        // If collision detected - use consistent collision radius (16 to match client-side)
+        if (distance < 16) { // Collision radius matching client-side setting
           hitPlayer = true;
           
           // Apply knockback from being hit

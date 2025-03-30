@@ -21,14 +21,15 @@ const GameConfig = {
   // World settings
   WORLD_WIDTH: 800,
   WORLD_HEIGHT: 600,
+  UI_HEIGHT: 50, // Height of the UI navbar
   
-  // Respawn positions
+  // Respawn positions (adjusted for UI height)
   RESPAWN_POSITIONS: [
-    { x: 100, y: 100 },
-    { x: 700, y: 100 },
-    { x: 100, y: 500 },
+    { x: 100, y: 150 }, // Y adjusted for UI
+    { x: 700, y: 150 }, // Y adjusted for UI
+    { x: 100, y: 500 }, 
     { x: 700, y: 500 },
-    { x: 400, y: 300 }
+    { x: 400, y: 325 }  // Y adjusted for UI
   ],
   
   // Obstacle settings
