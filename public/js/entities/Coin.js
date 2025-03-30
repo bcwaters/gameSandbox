@@ -10,14 +10,16 @@ class Coin {
      * @param {number} y - The y coordinate
      * @param {number} size - The size of the coin
      * @param {string} id - The coin's unique ID
+     * @param {string} type - The type of coin ('regular' or 'player_drop')
      */
-    constructor(scene, x, y, size, id) {
+    constructor(scene, x, y, size, id, type = 'regular') {
         this.scene = scene;
         this.id = id;
         this.size = size || 15;
+        this.type = type;
         
         // Create the simplest possible sprite for guaranteed visibility
-        this.createSimpleCoin(x, y);
+        this.createSimpleCoin(x, y, type);
     }
     
     /**
@@ -25,11 +27,24 @@ class Coin {
      * @param {number} x - The x coordinate
      * @param {number} y - The y coordinate
      */
-    createSimpleCoin(x, y) {
+    createSimpleCoin(x, y, type = 'regular') {
         // Create a simple circle for the coin
         const graphics = this.scene.add.graphics();
-        graphics.fillStyle(0xFFD700, 1); // Gold fill
-        graphics.lineStyle(2, 0xFFA500, 1); // Orange border
+        
+        // Use different colors based on coin type
+        if (type === 'player_drop') {
+            // Special player-dropped coin (red-gold)
+            graphics.fillStyle(0xFFD700, 1); // Gold fill
+            graphics.lineStyle(3, 0xFF0000, 1); // Red border (thicker)
+            
+            // Make it a bit larger for player drops
+            this.size = Math.max(this.size, 20);
+        } else {
+            // Regular coin (gold)
+            graphics.fillStyle(0xFFD700, 1); // Gold fill
+            graphics.lineStyle(2, 0xFFA500, 1); // Orange border
+        }
+        
         graphics.fillCircle(0, 0, this.size/2);
         graphics.strokeCircle(0, 0, this.size/2);
         
@@ -99,8 +114,15 @@ class Coin {
         const coinX = this.sprite.x;
         const coinY = this.sprite.y;
         
-        // Create particle effect (small gold circles flying outward)
-        for (let i = 0; i < 10; i++) {
+        // Determine if this is a player-dropped coin (adjust particles accordingly)
+        const isPlayerDroppedCoin = this.type === 'player_drop';
+        const particleCount = isPlayerDroppedCoin ? 20 : 10;
+        const particleColor = isPlayerDroppedCoin ? 0xFF5500 : 0xFFD700;
+        const scoreValue = isPlayerDroppedCoin ? '+5' : '+1';
+        const textColor = isPlayerDroppedCoin ? '#FF5500' : '#FFFF00';
+        
+        // Create particle effect (small gold/red circles flying outward)
+        for (let i = 0; i < particleCount; i++) {
             const angle = Math.random() * Math.PI * 2;
             const speed = 50 + Math.random() * 100;
             const particleSize = 2 + Math.random() * 4;
@@ -109,7 +131,7 @@ class Coin {
                 coinX, 
                 coinY, 
                 particleSize, 
-                0xFFD700
+                particleColor
             );
             
             this.scene.tweens.add({
@@ -127,11 +149,11 @@ class Coin {
         const scoreText = this.scene.add.text(
             coinX, 
             coinY - 10, 
-            '+1', 
+            scoreValue, 
             {
-                fontSize: '18px',
+                fontSize: isPlayerDroppedCoin ? '24px' : '18px',
                 fontStyle: 'bold',
-                fill: '#FFFF00',
+                fill: textColor,
                 stroke: '#000000',
                 strokeThickness: 3
             }

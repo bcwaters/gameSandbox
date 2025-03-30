@@ -35,9 +35,10 @@ class CoinManager {
         id: id,
         x: x,
         y: y,
-        size: config.COIN_SIZE,
-        value: config.COIN_VALUE,
-        createdAt: Date.now()
+        size: config.COIN_SIZE || 15,
+        value: config.COIN_VALUE || 1,
+        createdAt: Date.now(),
+        type: 'player_drop' // Mark coins dropped by players
       };
 
       // Add to coins map
@@ -60,6 +61,40 @@ class CoinManager {
   }
 
   /**
+   * Drop a coin at a specific position with custom properties
+   * @param {number} x - The x coordinate
+   * @param {number} y - The y coordinate
+   * @param {string} type - The type of coin ('regular' or 'player_drop')
+   * @param {number} value - The value of the coin
+   * @returns {Object} The created coin
+   */
+  dropCoinAtPosition(x, y, type = 'player_drop', value = 5) {
+    if (isNaN(x) || isNaN(y)) {
+      console.error('Cannot drop coin: position is invalid:', x, y);
+      return null;
+    }
+    
+    console.log(`Dropping ${type} coin at position: (${x}, ${y})`);
+    
+    // Add some slight random offset to make it more interesting
+    const offsetX = (Math.random() - 0.5) * 20;
+    const offsetY = (Math.random() - 0.5) * 20;
+    
+    // Create a special coin
+    const coin = this.createCoin(x + offsetX, y + offsetY);
+    
+    // If coin was created successfully, customize its properties
+    if (coin) {
+      coin.type = type;
+      coin.size = type === 'player_drop' ? 20 : 15; // Larger for player drops
+      coin.value = type === 'player_drop' ? (value || config.PLAYER_DROP_COIN_VALUE) : config.COIN_VALUE;
+      console.log(`Created ${type} coin worth ${coin.value} points`);
+    }
+    
+    return coin;
+  }
+  
+  /**
    * Drop a coin at the position of a defeated player
    * @param {Object} player - The defeated player object
    * @returns {Object} The created coin
@@ -75,13 +110,7 @@ class CoinManager {
       return null;
     }
     
-    console.log(`Dropping coin at player position: (${player.x}, ${player.y})`);
-    
-    // Add some slight random offset to make it more interesting
-    const offsetX = (Math.random() - 0.5) * 20;
-    const offsetY = (Math.random() - 0.5) * 20;
-    
-    return this.createCoin(player.x + offsetX, player.y + offsetY);
+    return this.dropCoinAtPosition(player.x, player.y, 'player_drop');
   }
 
   /**
@@ -153,7 +182,8 @@ class CoinManager {
       y: Number(coin.y),
       size: Number(coin.size || 15),
       value: Number(coin.value || 1),
-      createdAt: coin.createdAt
+      createdAt: coin.createdAt,
+      type: coin.type || 'regular'
     }));
     
     // Send a fixed number of coins per update to avoid overwhelming the client

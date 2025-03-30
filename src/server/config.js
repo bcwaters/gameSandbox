@@ -39,8 +39,9 @@ const GameConfig = {
   
   // Coin settings
   COIN_SIZE: 15,                // Size of coins in pixels
-  COIN_LIFETIME: 30000,         // How long coins last before disappearing (30 seconds)
-  COIN_VALUE: 1                 // Points gained per coin
+  COIN_LIFETIME: 15000,         // How long coins last before disappearing (15 seconds)
+  COIN_VALUE: 1,                // Points gained per regular coin
+  PLAYER_DROP_COIN_VALUE: 5     // Points gained per player-dropped coin
 };
 
 module.exports = GameConfig;

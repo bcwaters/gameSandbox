@@ -11,8 +11,7 @@ class MainScene extends Phaser.Scene {
         this.otherPlayers = {};
         this.projectiles = {};
         this.obstacles = {};
-        // NOTE: coins temporarily disabled
-        // this.coins = {};
+        this.coins = {};
         this.lastDirection = 'down';
         this.isDefeated = false;
         this.lastSwordTime = 0;
@@ -86,8 +85,9 @@ class MainScene extends Phaser.Scene {
             this.obstaclesGroup = this.physics.add.group({
                 immovable: true
             });
-            // Coins temporarily disabled
-            // this.coinsGroup = this.physics.add.group();
+            
+            // Re-enable coins
+            this.coinsGroup = this.physics.add.group();
             console.log('Physics groups created');
             
             // Initialize sound effects
@@ -378,8 +378,7 @@ class MainScene extends Phaser.Scene {
             });
         });
         
-        // Coin-related events temporarily disabled
-        /*
+        // Coin-related events
         // When getting all current coins
         this.socketManager.on('currentCoins', (coins) => {
             console.log('Received current coins:', coins);
@@ -431,7 +430,6 @@ class MainScene extends Phaser.Scene {
                 delete this.coins[coinId];
             }
         });
-        */
         
         // When a player's score is updated
         this.socketManager.on('playerScoreUpdate', (scoreInfo) => {
@@ -680,8 +678,6 @@ class MainScene extends Phaser.Scene {
                 });
             }
             
-            // Coin updates temporarily disabled
-            /*
             // Update coins if they're included in this update
             if (gameState.coins && Array.isArray(gameState.coins)) {
                 // Track which coins exist in the new state
@@ -707,7 +703,6 @@ class MainScene extends Phaser.Scene {
                 // since coins may not be included in every update
                 // Coin removal is handled by explicit coinRemoved and coinCollected events
             }
-            */
         });
         
         // When a player is defeated
@@ -716,13 +711,20 @@ class MainScene extends Phaser.Scene {
             if (data.playerId !== this.socketManager.getPlayerId() && this.otherPlayers[data.playerId]) {
                 const defeatedPlayer = this.otherPlayers[data.playerId];
                 
-                // Visual effect for defeated player
-                defeatedPlayer.sprite.setTint(0xff0000); // Red tint
+                // Store position before hiding the player
+                const playerX = defeatedPlayer.sprite.x;
+                const playerY = defeatedPlayer.sprite.y;
+                
+                // Create death explosion effect
+                this.createDeathExplosion(playerX, playerY);
+                
+                // Hide the player sprite
+                defeatedPlayer.sprite.setVisible(false);
                 
                 // Create a defeat text above the player
                 const defeatedText = this.add.text(
-                    defeatedPlayer.sprite.x, 
-                    defeatedPlayer.sprite.y - 50, 
+                    playerX, 
+                    playerY - 50, 
                     'DEFEATED', 
                     {
                         fontSize: '20px',
@@ -768,27 +770,13 @@ class MainScene extends Phaser.Scene {
                 respawnedPlayer.setHealth(data.health);
                 respawnedPlayer.setAmmo(data.ammo);
                 respawnedPlayer.sprite.clearTint(); // Remove red tint
+                respawnedPlayer.sprite.setVisible(true); // Make player visible again
                 
                 // Show respawn effect
-                const respawnEffect = this.add.sprite(
+                this.createRespawnEffect(
                     respawnedPlayer.sprite.x,
-                    respawnedPlayer.sprite.y,
-                    'character'
+                    respawnedPlayer.sprite.y
                 );
-                respawnEffect.setTint(0x00ffff); // Cyan tint
-                respawnEffect.setAlpha(0.7);
-                respawnEffect.setScale(1.5);
-                
-                // Animation
-                this.tweens.add({
-                    targets: respawnEffect,
-                    alpha: 0,
-                    scale: 0.5,
-                    duration: 800,
-                    onComplete: function() {
-                        respawnEffect.destroy();
-                    }
-                });
             }
         });
         
@@ -837,8 +825,7 @@ class MainScene extends Phaser.Scene {
                 this
             );
             
-            // Coin collection temporarily disabled
-            /* 
+            // Enable coin collection
             this.physics.add.overlap(
                 this.player.sprite,
                 this.coinsGroup,
@@ -846,7 +833,6 @@ class MainScene extends Phaser.Scene {
                 null,
                 this
             );
-            */
         }
         
         // Setup overlap between projectiles and other players
@@ -882,10 +868,6 @@ class MainScene extends Phaser.Scene {
      * Create a new coin
      * @param {Object} coinInfo - The coin data from server
      */
-    /**
-     * Coin creation handler - temporarily commented out
-     */
-    /*
     createCoin(coinInfo) {
         try {
             // Validate coin data
@@ -907,8 +889,11 @@ class MainScene extends Phaser.Scene {
                 return this.coins[coinInfo.id];
             }
             
+            // Get coin type (player_drop or regular)
+            const coinType = coinInfo.type || 'regular';
+            
             // Create a new coin instance using our simplified and reliable implementation
-            const coin = new Coin(this, x, y, size, coinInfo.id);
+            const coin = new Coin(this, x, y, size, coinInfo.id, coinType);
             
             // Add to tracking objects
             this.coins[coinInfo.id] = coin;
@@ -940,12 +925,10 @@ class MainScene extends Phaser.Scene {
             return null;
         }
     }
-    */
     
     /**
-     * Emergency coin creation - temporarily commented out
+     * Emergency coin creation - fallback method for when normal coin creation fails
      */
-    /*
     createEmergencyCoin(x, y, coinId) {
         // Create an absolute fallback coin using the simplest possible approach
         console.log('Creating emergency coin fallback at:', x, y);
@@ -977,37 +960,36 @@ class MainScene extends Phaser.Scene {
         
         return this.coins[coinId];
     }
-    */
     
-    // /**
-    //  * Handle coin collection by the player
-    //  * @param {Phaser.GameObjects.Sprite} playerSprite - The player sprite
-    //  * @param {Phaser.GameObjects.Sprite} coinSprite - The coin sprite
-    //  */
-    // handleCoinCollection(playerSprite, coinSprite) {
-    //     // Get coin ID
-    //     const coinId = coinSprite.coinId;
+    /**
+     * Handle coin collection by the player
+     * @param {Phaser.GameObjects.Sprite} playerSprite - The player sprite
+     * @param {Phaser.GameObjects.Sprite} coinSprite - The coin sprite
+     */
+    handleCoinCollection(playerSprite, coinSprite) {
+        // Get coin ID
+        const coinId = coinSprite.coinId;
         
-    //     if (!coinId || !this.coins[coinId]) {
-    //         console.log('Invalid coin collection attempt:', coinId);
-    //         return;
-    //     }
+        if (!coinId || !this.coins[coinId]) {
+            console.log('Invalid coin collection attempt:', coinId);
+            return;
+        }
         
-    //     console.log('Collecting coin:', coinId);
+        console.log('Collecting coin:', coinId);
         
-    //     // Notify server that coin was collected
-    //     this.socketManager.collectCoin(coinId);
+        // Notify server that coin was collected
+        this.socketManager.collectCoin(coinId);
         
-    //     // Play coin collection sound
-    //     if (this.coinSound) {
-    //         this.coinSound.play({ volume: 0.5 });
-    //     }
+        // Play coin collection sound
+        if (this.coinSound) {
+            this.coinSound.play({ volume: 0.5 });
+        }
         
-    //     // Create collection effect and destroy coin locally
-    //     // Server will broadcast the update to remove it for all players
-    //     this.coins[coinId].destroy(true);
-    //     delete this.coins[coinId];
-    // }
+        // Create collection effect and destroy coin locally
+        // Server will broadcast the update to remove it for all players
+        this.coins[coinId].destroy(true);
+        delete this.coins[coinId];
+    }
     
     /**
      * Create a new obstacle
@@ -1327,9 +1309,16 @@ class MainScene extends Phaser.Scene {
     handlePlayerDefeat() {
         this.isDefeated = true;
         
-        // Disable player visually
+        // Create particle explosion at player position
         if (this.player) {
-            this.player.sprite.setTint(0xff0000); // Make player red
+            const playerX = this.player.sprite.x;
+            const playerY = this.player.sprite.y;
+            
+            // Create explosion particles
+            this.createDeathExplosion(playerX, playerY);
+            
+            // Hide the player sprite immediately
+            this.player.sprite.setVisible(false);
         }
         
         // Show the defeat text
@@ -1342,6 +1331,59 @@ class MainScene extends Phaser.Scene {
         this.time.delayedCall(2000, () => this.resetPlayer());
     }
     
+    /**
+     * Create particle explosion for player death that transitions into a coin
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     */
+    createDeathExplosion(x, y) {
+        // Create particle colors (player colors + gold for transition to coin)
+        const colors = [0xff0000, 0xffff00, 0x00ffff, 0xffffff, 0xFFD700];
+        
+        // Create particles flying outward
+        for (let i = 0; i < 30; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 100 + Math.random() * 150;
+            const size = 3 + Math.random() * 5;
+            
+            // Choose random color from array
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            
+            const particle = this.add.circle(
+                x, 
+                y, 
+                size, 
+                color
+            );
+            particle.setDepth(20);
+            
+            // Animate particle outward
+            this.tweens.add({
+                targets: particle,
+                x: x + Math.cos(angle) * speed,
+                y: y + Math.sin(angle) * speed,
+                alpha: 0,
+                scale: 0.5,
+                duration: 800,
+                ease: 'Power2',
+                onComplete: () => particle.destroy()
+            });
+        }
+        
+        // Create a flash effect
+        const flash = this.add.circle(x, y, 50, 0xffffff, 0.8);
+        flash.setDepth(19);
+        
+        // Animate the flash
+        this.tweens.add({
+            targets: flash,
+            scale: 0,
+            alpha: 0,
+            duration: 500,
+            onComplete: () => flash.destroy()
+        });
+    }
+    
     resetPlayer() {
         // Hide defeat text
         this.ui.hideDefeatText();
@@ -1349,12 +1391,72 @@ class MainScene extends Phaser.Scene {
         // Re-enable player
         if (this.player) {
             this.player.sprite.clearTint();
+            this.player.sprite.setVisible(true); // Make player visible again
+            
+            // Add a respawn effect
+            this.createRespawnEffect(this.player.sprite.x, this.player.sprite.y);
             
             // Tell server to respawn player
             this.socketManager.respawnPlayer();
         }
         
         this.isDefeated = false;
+    }
+    
+    /**
+     * Create a visual effect for player respawn
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     */
+    createRespawnEffect(x, y) {
+        // Create a respawn circle that expands outward
+        const respawnCircle = this.add.circle(x, y, 0, 0x00ffff, 0.6);
+        respawnCircle.setDepth(5);
+        
+        // Animate the respawn circle
+        this.tweens.add({
+            targets: respawnCircle,
+            radius: 50,
+            alpha: 0,
+            duration: 800,
+            onComplete: () => respawnCircle.destroy()
+        });
+        
+        // Create some small particles
+        for (let i = 0; i < 10; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 30 + Math.random() * 10;
+            const size = 2 + Math.random() * 3;
+            
+            const particle = this.add.circle(
+                x + Math.cos(angle) * distance, 
+                y + Math.sin(angle) * distance, 
+                size, 
+                0x00ffff
+            );
+            particle.setDepth(6);
+            particle.setAlpha(0);
+            
+            // Animate particles moving inward
+            this.tweens.add({
+                targets: particle,
+                x: x,
+                y: y,
+                alpha: { from: 0, to: 0.8, duration: 300 },
+                scale: { from: 0.5, to: 1.5, duration: 400 },
+                ease: 'Sine.easeIn',
+                duration: 500,
+                onComplete: () => {
+                    this.tweens.add({
+                        targets: particle,
+                        alpha: 0,
+                        scale: 0,
+                        duration: 300,
+                        onComplete: () => particle.destroy()
+                    });
+                }
+            });
+        }
     }
     
     /**

@@ -164,11 +164,34 @@ class PlayerManager {
           this.players[hitPlayerId].health = 0;
         }
         
+        // Broadcast that the player has been defeated if health is now 0
+        if (this.players[hitPlayerId].health <= 0) {
+          this.defeatPlayer(hitPlayerId);
+        }
+        
         return true;
       }
     }
     
     return false;
+  }
+  
+  /**
+   * Mark a player as defeated and broadcast the event
+   * @param {string} socketId - The socket ID of the defeated player
+   */
+  defeatPlayer(socketId) {
+    if (this.players[socketId]) {
+      this.players[socketId].health = 0;
+      this.players[socketId].defeated = true;
+      
+      // Broadcast the player defeat event
+      this.io.emit('playerDefeated', {
+        playerId: socketId
+      });
+      
+      console.log(`Player ${socketId} marked as defeated`);
+    }
   }
 
   /**

@@ -6,7 +6,7 @@ const config = require('./config');
 const PlayerManager = require('./players');
 const ProjectileManager = require('./projectiles');
 const ObstacleManager = require('./obstacles');
-// const CoinManager = require('./coins'); // Temporarily commented out
+const CoinManager = require('./coins'); // Re-enabled coin manager
 const PhysicsManager = require('./physics');
 
 class Game {
@@ -15,7 +15,7 @@ class Game {
     this.playerManager = new PlayerManager(io);
     this.projectileManager = new ProjectileManager(io);
     this.obstacleManager = new ObstacleManager(io);
-    // this.coinManager = new CoinManager(io); // Temporarily commented out
+    this.coinManager = new CoinManager(io); // Re-enabled coin manager
     this.physicsManager = new PhysicsManager();
     this.lastUpdateTime = Date.now();
   }
@@ -47,7 +47,7 @@ class Game {
     // Send current game state to the new player
     socket.emit('currentPlayers', this.playerManager.getAllPlayers());
     socket.emit('currentObstacles', this.obstacleManager.getSerializedObstacles());
-    // socket.emit('currentCoins', this.coinManager.getSerializedCoins()); // Temporarily commented out
+    socket.emit('currentCoins', this.coinManager.getSerializedCoins()); // Re-enabled coins
     
     // Inform other players of the new player
     socket.broadcast.emit('newPlayer', player);
@@ -116,15 +116,22 @@ class Game {
     // Handle player defeat
     socket.on('playerDefeated', (data) => {
       // Get player before marking as defeated (to get position)
-      const player = this.playerManager.getPlayer(data.playerId);
+      const player = this.playerManager.getPlayer(data.playerId || socket.id);
       
-      // Mark player as defeated
-      this.playerManager.defeatPlayer(data.playerId);
-      
-      // Drop a coin at the player's position when defeated - temporarily commented out
-      // if (player) {
-      //   this.coinManager.dropCoinAtPlayerPosition(player);
-      // }
+      if (player) {
+        console.log(`Player ${socket.id} defeated at position (${player.x}, ${player.y})`);
+        
+        // Store player position before marking as defeated
+        const playerX = player.x;
+        const playerY = player.y;
+        
+        // Mark player as defeated
+        this.playerManager.defeatPlayer(data.playerId || socket.id);
+        
+        // Create a player-dropped coin with special properties
+        console.log(`Spawning player-drop coin at (${playerX}, ${playerY}) for defeated player ${socket.id}`);
+        this.coinManager.dropCoinAtPosition(playerX, playerY, 'player_drop', 5);
+      }
     });
     
     // Handle player respawn
@@ -178,8 +185,7 @@ class Game {
       this.playerManager.setPlayerName(socket.id, data.name);
     });
     
-    // Handle coin collection - temporarily commented out
-    /*
+    // Handle coin collection
     socket.on('collectCoin', (data) => {
       try {
         if (!data || !data.coinId) {
@@ -206,7 +212,6 @@ class Game {
         console.error('Error in collectCoin handler:', error);
       }
     });
-    */
   }
 
   /**
@@ -268,10 +273,10 @@ class Game {
       obstacles: this.obstacleManager.getSerializedObstacles()
     };
     
-    // Coins temporarily disabled
-    // if (Math.floor(Date.now() / 1000) % 5 === 0) {
-    //   gameState.coins = this.coinManager.getSerializedCoins();
-    // }
+    // Re-enabled coins
+    if (Math.floor(Date.now() / 1000) % 5 === 0) {
+      gameState.coins = this.coinManager.getSerializedCoins();
+    }
     
     this.io.emit('gameState', gameState);
   }
