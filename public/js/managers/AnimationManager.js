@@ -51,7 +51,7 @@ class AnimationManager {
             repeat: -1
         });
         
-        // Projectile animation
+        // Projectile animation - ensure we have the right frames
         scene.anims.create({
             key: 'projectile-spin',
             frames: scene.anims.generateFrameNumbers('projectile', { 
@@ -60,6 +60,13 @@ class AnimationManager {
             }),
             frameRate: 10,
             repeat: -1
+        });
+        
+        // Add a simple fallback animation in case the spritesheet doesn't work
+        scene.anims.create({
+            key: 'projectile-default',
+            frames: [ { key: 'projectile', frame: 0 } ],
+            frameRate: 10
         });
     }
 } 

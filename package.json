@@ -1,16 +1,20 @@
 {
   "name": "game_sandbox",
   "version": "1.0.0",
-  "main": "server.js",
+  "description": "Multiplayer game sandbox with server-side physics",
+  "main": "src/server/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node src/server/server.js",
+    "dev": "nodemon src/server/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "express": "^4.21.2",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
   }
 }

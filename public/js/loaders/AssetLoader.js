@@ -16,7 +16,7 @@ class AssetLoader {
             }
         );
         
-        // Load projectile as spritesheet
+        // Load projectile both as spritesheet and as image for fallback
         scene.load.spritesheet('projectile', 
             'sprites/ball.png', 
             {
@@ -24,5 +24,11 @@ class AssetLoader {
                 frameHeight: 99
             }
         );
+        
+        // Load the same file as a regular image for fallback
+        scene.load.image('projectile-img', 'sprites/ball.png');
+        
+        // Load bullet as an alternative projectile
+        scene.load.image('bullet', 'sprites/bullet.png');
     }
 } 
