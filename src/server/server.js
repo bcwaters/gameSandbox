@@ -39,7 +39,7 @@ class GameServer {
    * Start the server
    * @param {number} port - The port to listen on
    */
-  start(port = 3000) {
+  start(port = 3006) {
     this.server.listen(port, () => {
       console.log(`Server running on port ${port}`);
     });
@@ -47,6 +47,6 @@ class GameServer {
 }
 
 // Create and start the server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3006;
 const gameServer = new GameServer();
 gameServer.start(PORT);
