@@ -718,8 +718,9 @@ class MainScene extends Phaser.Scene {
                 // Create death explosion effect
                 this.createDeathExplosion(playerX, playerY);
                 
-                // Hide the player sprite
+                // Hide the player sprite and disable physics
                 defeatedPlayer.sprite.setVisible(false);
+                defeatedPlayer.sprite.body.enable = false;
                 
                 // Create a defeat text above the player
                 const defeatedText = this.add.text(
@@ -771,6 +772,7 @@ class MainScene extends Phaser.Scene {
                 respawnedPlayer.setAmmo(data.ammo);
                 respawnedPlayer.sprite.clearTint(); // Remove red tint
                 respawnedPlayer.sprite.setVisible(true); // Make player visible again
+                respawnedPlayer.sprite.body.enable = true; // Re-enable physics
                 
                 // Show respawn effect
                 this.createRespawnEffect(
@@ -967,6 +969,12 @@ class MainScene extends Phaser.Scene {
      * @param {Phaser.GameObjects.Sprite} coinSprite - The coin sprite
      */
     handleCoinCollection(playerSprite, coinSprite) {
+        // Skip collection if player is in defeated state
+        if (this.isDefeated) {
+            console.log('Cannot collect coin while defeated');
+            return;
+        }
+        
         // Get coin ID
         const coinId = coinSprite.coinId;
         
@@ -1317,8 +1325,11 @@ class MainScene extends Phaser.Scene {
             // Create explosion particles
             this.createDeathExplosion(playerX, playerY);
             
-            // Hide the player sprite immediately
+            // Hide the player sprite immediately and disable physics
             this.player.sprite.setVisible(false);
+            
+            // Disable the player's physics body to prevent any collision detection
+            this.player.sprite.body.enable = false;
         }
         
         // Show the defeat text
@@ -1392,6 +1403,7 @@ class MainScene extends Phaser.Scene {
         if (this.player) {
             this.player.sprite.clearTint();
             this.player.sprite.setVisible(true); // Make player visible again
+            this.player.sprite.body.enable = true; // Re-enable physics
             
             // Add a respawn effect
             this.createRespawnEffect(this.player.sprite.x, this.player.sprite.y);

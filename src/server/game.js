@@ -128,9 +128,12 @@ class Game {
         // Mark player as defeated
         this.playerManager.defeatPlayer(data.playerId || socket.id);
         
-        // Create a player-dropped coin with special properties
-        console.log(`Spawning player-drop coin at (${playerX}, ${playerY}) for defeated player ${socket.id}`);
-        this.coinManager.dropCoinAtPosition(playerX, playerY, 'player_drop', 5);
+        // Delay coin spawn slightly to prevent immediate collection
+        setTimeout(() => {
+          // Create a player-dropped coin with special properties
+          console.log(`Spawning player-drop coin at (${playerX}, ${playerY}) for defeated player ${socket.id}`);
+          this.coinManager.dropCoinAtPosition(playerX, playerY, 'player_drop', 5);
+        }, 500); // 500ms delay - longer than client-side visual effect
       }
     });
     
