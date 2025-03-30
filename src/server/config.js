@@ -29,7 +29,18 @@ const GameConfig = {
     { x: 100, y: 500 },
     { x: 700, y: 500 },
     { x: 400, y: 300 }
-  ]
+  ],
+  
+  // Obstacle settings
+  OBSTACLE_COUNT: 10,           // Number of obstacles to place
+  OBSTACLE_SIZE: 30,            // Size of obstacles in pixels
+  OBSTACLE_MAX_HEALTH: 2,       // Number of sword hits to destroy
+  OBSTACLE_MIN_DISTANCE: 100,   // Minimum distance between obstacles and respawn points
+  
+  // Coin settings
+  COIN_SIZE: 15,                // Size of coins in pixels
+  COIN_LIFETIME: 30000,         // How long coins last before disappearing (30 seconds)
+  COIN_VALUE: 1                 // Points gained per coin
 };
 
 module.exports = GameConfig;

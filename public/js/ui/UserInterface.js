@@ -10,6 +10,7 @@ class UserInterface {
         this.scene = scene;
         this.healthBarUI = null;
         this.ammoCounterText = null;
+        this.scoreCounterText = null;
         this.defeatText = null;
         this.maxHealth = 5;
         this.maxAmmo = 10;
@@ -17,6 +18,7 @@ class UserInterface {
         // Create UI elements
         this.createHealthBar();
         this.createAmmoCounter();
+        this.createScoreCounter();
         this.createDefeatText();
         
         // Set up name input handlers
@@ -67,6 +69,19 @@ class UserInterface {
             padding: { x: 5, y: 5 }
         });
         this.ammoCounterText.setScrollFactor(0); // Fix to camera
+    }
+    
+    /**
+     * Create the score counter UI
+     */
+    createScoreCounter() {
+        this.scoreCounterText = this.scene.add.text(16, 80, 'Score: 0', { 
+            fontSize: '18px', 
+            fill: '#ffff00', // Yellow text for score
+            backgroundColor: '#000',
+            padding: { x: 5, y: 5 }
+        });
+        this.scoreCounterText.setScrollFactor(0); // Fix to camera
     }
     
     /**
@@ -194,6 +209,24 @@ class UserInterface {
      */
     updateAmmoCounter(ammo) {
         this.ammoCounterText.setText(`Ammo: ${ammo}/${this.maxAmmo}`);
+    }
+    
+    /**
+     * Update the score counter display
+     * @param {number} score - The current score value
+     */
+    updateScoreCounter(score) {
+        if (this.scoreCounterText) {
+            this.scoreCounterText.setText(`Score: ${score}`);
+            
+            // Add a small animation effect
+            this.scene.tweens.add({
+                targets: this.scoreCounterText,
+                scale: 1.2,
+                duration: 100,
+                yoyo: true
+            });
+        }
     }
     
     /**

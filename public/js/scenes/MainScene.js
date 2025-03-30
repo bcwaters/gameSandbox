@@ -1,6 +1,8 @@
 /**
  * MainScene - The main game scene
  */
+// Define MainScene as a global class and ensure it's loaded before game.js
+console.log('Defining MainScene class...');
 class MainScene extends Phaser.Scene {
     constructor() {
         super('MainScene');
@@ -8,49 +10,168 @@ class MainScene extends Phaser.Scene {
         this.player = null;
         this.otherPlayers = {};
         this.projectiles = {};
+        this.obstacles = {};
+        // NOTE: coins temporarily disabled
+        // this.coins = {};
         this.lastDirection = 'down';
         this.isDefeated = false;
         this.lastSwordTime = 0;
         this.swordCooldown = 1000;
         this.playersHitBySword = {};
+        this.obstaclesHitBySword = {};
+        
+        console.log('MainScene constructor completed');
     }
     
     preload() {
-        // Load assets
-        AssetLoader.preloadAssets(this);
-        
-        // Load sound effects
-        this.load.audio('shoot', 'sounds/shoot.mp3');
-        this.load.audio('hit', 'sounds/hit.mp3');
-        this.load.audio('sword-slash', 'sounds/sword-slash.mp3');
+        console.log('MainScene preload started');
+        try {
+            // Load assets
+            console.log('Loading game assets via AssetLoader');
+            AssetLoader.preloadAssets(this);
+            
+            console.log('Loading sound effects');
+            // Load sound effects
+            this.load.audio('shoot', 'sounds/shoot.mp3');
+            this.load.audio('hit', 'sounds/hit.mp3');
+            this.load.audio('sword-slash', 'sounds/sword-slash.mp3');
+            this.load.audio('coin-collect', 'sounds/coin.mp3');
+            console.log('Sound effects loaded');
+        } catch (error) {
+            console.error('ERROR in MainScene preload:', error);
+        }
+        console.log('MainScene preload completed');
     }
     
     create() {
-        // Initialize networking
-        this.socketManager = new SocketManager();
+        console.log('MainScene create function started');
+        try {
+            // Initialize networking
+            console.log('Creating SocketManager instance');
+            this.socketManager = new SocketManager();
+            console.log('SocketManager instance created');
+            
+            // Handle connection events
+            console.log('Setting up socket connection event handlers');
+            this.socketManager.on('connect', () => {
+                console.log('MainScene: Connected to server');
+                this.showConnectionStatus(true);
+            });
+            
+            this.socketManager.on('disconnect', (reason) => {
+                console.log('MainScene: Disconnected from server, reason:', reason);
+                this.showConnectionStatus(false, reason);
+            });
+            
+            this.socketManager.on('connect_error', (error) => {
+                console.error('MainScene: Connection error', error);
+                this.showConnectionStatus(false, 'Connection error');
+            });
+            console.log('Socket event handlers setup completed');
         
-        // Create animations
-        AnimationManager.createAnimations(this);
+  
+            // Create animations
+            console.log('Creating animations via AnimationManager');
+            AnimationManager.createAnimations(this);
+            console.log('Animations created successfully');
+            
+            // Create physics groups
+            console.log('Creating physics groups');
+            this.otherPlayersGroup = this.physics.add.group();
+            this.projectilesGroup = this.physics.add.group({
+                classType: Phaser.Physics.Arcade.Sprite,
+                maxSize: 20,
+                runChildUpdate: true
+            });
+            this.obstaclesGroup = this.physics.add.group({
+                immovable: true
+            });
+            // Coins temporarily disabled
+            // this.coinsGroup = this.physics.add.group();
+            console.log('Physics groups created');
+            
+            // Initialize sound effects
+            console.log('Initializing sound effects');
+            this.initSounds();
+            console.log('Sound effects initialized');
+            
+            // Create UI
+            console.log('Creating user interface');
+            this.ui = new UserInterface(this);
+            console.log('User interface created');
+            
+            // Setup keyboard input
+            console.log('Setting up keyboard input');
+            this.setupInput();
+            console.log('Keyboard input setup completed');
+            
+            // Setup socket events
+            console.log('Setting up socket event handlers');
+            this.setupSocketEvents();
+            console.log('Socket event handlers setup completed');
+            
+            // Set world bounds explicitly
+            console.log('Setting world bounds');
+            this.physics.world.setBounds(0, 0, 800, 600);
+            
+            // Add background to make sure rendering is working
+            console.log('Creating background rectangle');
+            const background = this.add.rectangle(
+                400, // width/2
+                300, // height/2
+                800, // width
+                600, // height
+                0x222222
+            );
+            background.setDepth(-10);
+            
+            // Show a text to indicate the game has loaded
+            console.log('Creating loading text');
+            const loadingText = this.add.text(
+                this.cameras.main.width / 2,
+                this.cameras.main.height / 2,
+                'Game loaded! Waiting for players...',
+                {
+                    fontSize: '24px',
+                    fill: '#ffffff',
+                    stroke: '#000000',
+                    strokeThickness: 4
+                }
+            );
+            loadingText.setOrigin(0.5);
+            loadingText.setDepth(100);
+            
+            // Fade out the text after 3 seconds
+            this.tweens.add({
+                targets: loadingText,
+                alpha: 0,
+                delay: 3000,
+                duration: 1000,
+                onComplete: () => loadingText.destroy()
+            });
+        } catch (error) {
+            console.error('ERROR in MainScene create:', error);
+            // Try to show error on screen
+            try {
+                const errorText = this.add.text(
+                    this.cameras.main.width / 2,
+                    this.cameras.main.height / 2,
+                    'Error initializing game: ' + error.message,
+                    {
+                        fontSize: '16px',
+                        fill: '#FF0000',
+                        backgroundColor: '#000000',
+                        padding: { x: 10, y: 10 }
+                    }
+                );
+                errorText.setOrigin(0.5);
+                errorText.setDepth(1000);
+            } catch (e) {
+                console.error('Failed to display error message:', e);
+            }
+        }
         
-        // Create physics groups
-        this.otherPlayersGroup = this.physics.add.group();
-        this.projectilesGroup = this.physics.add.group({
-            classType: Phaser.Physics.Arcade.Sprite,
-            maxSize: 20,
-            runChildUpdate: true
-        });
-        
-        // Initialize sound effects
-        this.initSounds();
-        
-        // Create UI
-        this.ui = new UserInterface(this);
-        
-        // Setup keyboard input
-        this.setupInput();
-        
-        // Setup socket events
-        this.setupSocketEvents();
+        console.log('MainScene create function completed');
     }
     
     initSounds() {
@@ -58,10 +179,29 @@ class MainScene extends Phaser.Scene {
             this.shootSound = this.sound.add('shoot');
             this.hitSound = this.sound.add('hit');
             this.swordSound = this.sound.add('sword-slash');
+            this.coinSound = this.sound.add('coin-collect');
             
             // Add event handlers for when sounds fail to load
             this.sound.once('loaderror', (soundKey, error) => {
                 console.error('Error loading sound:', soundKey, error);
+            });
+            
+            // Setup safe play method for each sound
+            const sounds = ['shootSound', 'hitSound', 'swordSound', 'coinSound'];
+            sounds.forEach(soundName => {
+                const originalSound = this[soundName];
+                if (originalSound) {
+                    // Override the sound's play method with a safe version
+                    const originalPlay = originalSound.play.bind(originalSound);
+                    originalSound.play = (config) => {
+                        try {
+                            return originalPlay(config);
+                        } catch (error) {
+                            console.warn(`Error playing ${soundName}:`, error);
+                            return null;
+                        }
+                    };
+                }
             });
         } catch (error) {
             console.error('Error initializing sounds:', error);
@@ -69,6 +209,7 @@ class MainScene extends Phaser.Scene {
             this.shootSound = null;
             this.hitSound = null;
             this.swordSound = null;
+            this.coinSound = null;
         }
     }
     
@@ -134,6 +275,174 @@ class MainScene extends Phaser.Scene {
             
             // Setup collisions
             this.setupCollisions();
+        });
+        
+        // When current obstacles data is received
+        this.socketManager.on('currentObstacles', (obstacles) => {
+            // Clear any existing obstacles
+            Object.values(this.obstacles).forEach(obstacle => obstacle.destroy());
+            this.obstacles = {};
+            
+            // Create all obstacles
+            obstacles.forEach(obstacleInfo => {
+                this.createObstacle(obstacleInfo);
+            });
+        });
+        
+        // When an obstacle is hit
+        this.socketManager.on('obstacleHit', (hitInfo) => {
+            const obstacle = this.obstacles[hitInfo.obstacleId];
+            if (obstacle) {
+                // Update health from server
+                obstacle.updateFromServer(undefined, undefined, hitInfo.health);
+                
+                // Play hit sound if it's our hit
+                if (hitInfo.playerId === this.socketManager.getPlayerId()) {
+                    if (this.hitSound) {
+                        this.hitSound.play({ volume: 0.5 });
+                    }
+                }
+            }
+        });
+        
+        // When an obstacle is destroyed
+        this.socketManager.on('obstacleDestroyed', (destroyInfo) => {
+            const obstacle = this.obstacles[destroyInfo.obstacleId];
+            if (obstacle) {
+                // Create destruction effect
+                obstacle.destroy();
+                delete this.obstacles[destroyInfo.obstacleId];
+                
+                // Play hit sound if it's our hit
+                if (destroyInfo.playerId === this.socketManager.getPlayerId()) {
+                    if (this.hitSound) {
+                        this.hitSound.play({ volume: 0.8 });
+                    }
+                }
+            }
+        });
+        
+        // When a projectile hits something
+        this.socketManager.on('projectileImpact', (impactInfo) => {
+            this.createHitImpact(impactInfo.x, impactInfo.y);
+        });
+        
+        // When a new obstacle is spawned
+        this.socketManager.on('newObstacle', (obstacleInfo) => {
+            // Create the new obstacle
+            this.createObstacle(obstacleInfo);
+            
+            // Add a visual spawning effect
+            const spawnEffect = this.add.circle(
+                obstacleInfo.x,
+                obstacleInfo.y,
+                obstacleInfo.size * 1.5,
+                0x00ffff,
+                0.7
+            );
+            
+            // Animate the spawn effect
+            this.tweens.add({
+                targets: spawnEffect,
+                alpha: 0,
+                scale: 1.5,
+                duration: 1000,
+                onComplete: () => spawnEffect.destroy()
+            });
+            
+            // Add a text notification
+            const notification = this.add.text(
+                this.cameras.main.width / 2,
+                50,
+                'New Obstacle Spawned!',
+                {
+                    fontSize: '24px',
+                    fontStyle: 'bold',
+                    fill: '#00ffff',
+                    stroke: '#000000',
+                    strokeThickness: 4
+                }
+            );
+            notification.setOrigin(0.5);
+            notification.setScrollFactor(0);
+            notification.setDepth(100);
+            
+            // Animate and remove the notification
+            this.tweens.add({
+                targets: notification,
+                alpha: 0,
+                y: 20,
+                duration: 2000,
+                ease: 'Power2',
+                onComplete: () => notification.destroy()
+            });
+        });
+        
+        // Coin-related events temporarily disabled
+        /*
+        // When getting all current coins
+        this.socketManager.on('currentCoins', (coins) => {
+            console.log('Received current coins:', coins);
+            
+            // Clear any existing coins
+            Object.values(this.coins).forEach(coin => {
+                if (coin && typeof coin.destroy === 'function') {
+                    coin.destroy();
+                }
+            });
+            this.coins = {};
+            
+            // Create all coins
+            if (Array.isArray(coins)) {
+                coins.forEach(coinInfo => {
+                    if (coinInfo && coinInfo.id) {
+                        this.createCoin(coinInfo);
+                    }
+                });
+            }
+        });
+        
+        // When a new coin is spawned
+        this.socketManager.on('coinSpawned', (coinInfo) => {
+            // Create the new coin
+            this.createCoin(coinInfo);
+        });
+        
+        // When a coin is collected by any player
+        this.socketManager.on('coinCollected', (collectionInfo) => {
+            const coinId = collectionInfo.coinId;
+            const playerId = collectionInfo.playerId;
+            
+            // Only show collection effect if collected by another player
+            // (We already handled our own collection in the overlap handler)
+            if (playerId !== this.socketManager.getPlayerId() && this.coins[coinId]) {
+                this.coins[coinId].destroy(true);
+                delete this.coins[coinId];
+            }
+        });
+        
+        // When a coin is removed (expired)
+        this.socketManager.on('coinRemoved', (removalInfo) => {
+            const coinId = removalInfo.coinId;
+            
+            // If expired, don't show the collection effect
+            if (this.coins[coinId]) {
+                this.coins[coinId].destroy(false);
+                delete this.coins[coinId];
+            }
+        });
+        */
+        
+        // When a player's score is updated
+        this.socketManager.on('playerScoreUpdate', (scoreInfo) => {
+            // If it's our score, update the UI
+            if (scoreInfo.playerId === this.socketManager.getPlayerId() && this.player) {
+                this.player.score = scoreInfo.score;
+                this.ui.updateScoreCounter(scoreInfo.score);
+            } else if (this.otherPlayers[scoreInfo.playerId]) {
+                // Update other player's score
+                this.otherPlayers[scoreInfo.playerId].score = scoreInfo.score;
+            }
         });
         
         // When a new player joins
@@ -337,6 +646,68 @@ class MainScene extends Phaser.Scene {
                     }
                 });
             }
+            
+            // Update obstacles
+            if (gameState.obstacles && Array.isArray(gameState.obstacles)) {
+                // Track which obstacles exist in the new state
+                const currentObstacleIds = new Set();
+                
+                gameState.obstacles.forEach(serverObstacle => {
+                    currentObstacleIds.add(serverObstacle.id);
+                    
+                    // Check if we already have this obstacle
+                    if (this.obstacles[serverObstacle.id]) {
+                        // Update existing obstacle
+                        this.obstacles[serverObstacle.id].updateFromServer(
+                            serverObstacle.x,
+                            serverObstacle.y,
+                            serverObstacle.health
+                        );
+                    } else {
+                        // Create a new obstacle if we don't have it yet
+                        this.createObstacle(serverObstacle);
+                    }
+                });
+                
+                // Remove obstacles that are no longer in the game state
+                Object.keys(this.obstacles).forEach(id => {
+                    if (!currentObstacleIds.has(id)) {
+                        if (this.obstacles[id]) {
+                            this.obstacles[id].destroy();
+                            delete this.obstacles[id];
+                        }
+                    }
+                });
+            }
+            
+            // Coin updates temporarily disabled
+            /*
+            // Update coins if they're included in this update
+            if (gameState.coins && Array.isArray(gameState.coins)) {
+                // Track which coins exist in the new state
+                const currentCoinIds = new Set();
+                
+                gameState.coins.forEach(serverCoin => {
+                    currentCoinIds.add(serverCoin.id);
+                    
+                    // Check if we already have this coin
+                    if (this.coins[serverCoin.id]) {
+                        // Update existing coin position if needed
+                        this.coins[serverCoin.id].updatePosition(
+                            serverCoin.x,
+                            serverCoin.y
+                        );
+                    } else {
+                        // Create a new coin if we don't have it yet
+                        this.createCoin(serverCoin);
+                    }
+                });
+                
+                // Note: We DO NOT remove coins that are not in the update
+                // since coins may not be included in every update
+                // Coin removal is handled by explicit coinRemoved and coinCollected events
+            }
+            */
         });
         
         // When a player is defeated
@@ -447,6 +818,12 @@ class MainScene extends Phaser.Scene {
                 this.otherPlayersGroup
             );
             
+            // Setup collision between player and obstacles
+            this.physics.add.collider(
+                this.player.sprite,
+                this.obstaclesGroup
+            );
+            
             // Setup overlap between projectiles and the local player
             this.physics.add.overlap(
                 this.projectilesGroup,
@@ -459,6 +836,17 @@ class MainScene extends Phaser.Scene {
                 },
                 this
             );
+            
+            // Coin collection temporarily disabled
+            /* 
+            this.physics.add.overlap(
+                this.player.sprite,
+                this.coinsGroup,
+                this.handleCoinCollection,
+                null,
+                this
+            );
+            */
         }
         
         // Setup overlap between projectiles and other players
@@ -473,6 +861,203 @@ class MainScene extends Phaser.Scene {
             },
             this
         );
+        
+        // Setup collision between projectiles and obstacles
+        this.physics.add.collider(
+            this.projectilesGroup,
+            this.obstaclesGroup,
+            this.handleProjectileObstacleHit,
+            null,
+            this
+        );
+        
+        // Setup collision between other players and obstacles
+        this.physics.add.collider(
+            this.otherPlayersGroup,
+            this.obstaclesGroup
+        );
+    }
+    
+    /**
+     * Create a new coin
+     * @param {Object} coinInfo - The coin data from server
+     */
+    /**
+     * Coin creation handler - temporarily commented out
+     */
+    /*
+    createCoin(coinInfo) {
+        try {
+            // Validate coin data
+            if (!coinInfo || !coinInfo.id) {
+                console.error('Invalid coin data:', coinInfo);
+                return null;
+            }
+            
+            // Ensure we have valid coordinates
+            const x = Number(coinInfo.x) || 0;
+            const y = Number(coinInfo.y) || 0;
+            const size = Number(coinInfo.size) || 15;
+            
+            console.log('Creating coin:', coinInfo.id, 'at position:', x, y);
+            
+            // If this coin already exists, update position and return the existing coin
+            if (this.coins[coinInfo.id]) {
+                this.coins[coinInfo.id].updatePosition(x, y);
+                return this.coins[coinInfo.id];
+            }
+            
+            // Create a new coin instance using our simplified and reliable implementation
+            const coin = new Coin(this, x, y, size, coinInfo.id);
+            
+            // Add to tracking objects
+            this.coins[coinInfo.id] = coin;
+            
+            // Add to physics group if sprite was created successfully
+            if (coin.sprite && coin.sprite.body) {
+                this.coinsGroup.add(coin.sprite);
+                
+                // Add a simple scaling effect on creation
+                this.tweens.add({
+                    targets: coin.sprite,
+                    scale: { from: 0, to: 1 },
+                    duration: 300,
+                    ease: 'Back.out'
+                });
+            } else {
+                console.error('Coin sprite or body not created properly. Will retry creation.');
+                
+                // Remove the failed coin
+                delete this.coins[coinInfo.id];
+                
+                // Create an emergency fallback coin using a completely different approach
+                this.createEmergencyCoin(x, y, coinInfo.id);
+            }
+            
+            return coin;
+        } catch (error) {
+            console.error('Error creating coin:', error);
+            return null;
+        }
+    }
+    */
+    
+    /**
+     * Emergency coin creation - temporarily commented out
+     */
+    /*
+    createEmergencyCoin(x, y, coinId) {
+        // Create an absolute fallback coin using the simplest possible approach
+        console.log('Creating emergency coin fallback at:', x, y);
+        
+        // Just use a basic yellow circle
+        const sprite = this.physics.add.sprite(x, y, '');
+        sprite.coinId = coinId;
+        
+        // Make it a basic yellow circle if there's no texture
+        const circle = this.add.circle(x, y, 15, 0xffff00);
+        
+        // Store in our coins object with a minimal API
+        this.coins[coinId] = {
+            id: coinId,
+            sprite: sprite,
+            updatePosition: (newX, newY) => {
+                if (sprite) sprite.setPosition(newX, newY);
+                if (circle) circle.setPosition(newX, newY);
+            },
+            destroy: (collected) => {
+                if (sprite) sprite.destroy();
+                if (circle) circle.destroy();
+                delete this.coins[coinId];
+            }
+        };
+        
+        // Add to the physics group
+        this.coinsGroup.add(sprite);
+        
+        return this.coins[coinId];
+    }
+    */
+    
+    // /**
+    //  * Handle coin collection by the player
+    //  * @param {Phaser.GameObjects.Sprite} playerSprite - The player sprite
+    //  * @param {Phaser.GameObjects.Sprite} coinSprite - The coin sprite
+    //  */
+    // handleCoinCollection(playerSprite, coinSprite) {
+    //     // Get coin ID
+    //     const coinId = coinSprite.coinId;
+        
+    //     if (!coinId || !this.coins[coinId]) {
+    //         console.log('Invalid coin collection attempt:', coinId);
+    //         return;
+    //     }
+        
+    //     console.log('Collecting coin:', coinId);
+        
+    //     // Notify server that coin was collected
+    //     this.socketManager.collectCoin(coinId);
+        
+    //     // Play coin collection sound
+    //     if (this.coinSound) {
+    //         this.coinSound.play({ volume: 0.5 });
+    //     }
+        
+    //     // Create collection effect and destroy coin locally
+    //     // Server will broadcast the update to remove it for all players
+    //     this.coins[coinId].destroy(true);
+    //     delete this.coins[coinId];
+    // }
+    
+    /**
+     * Create a new obstacle
+     * @param {Object} obstacleInfo - The obstacle data from server
+     */
+    createObstacle(obstacleInfo) {
+        // Create obstacle instance
+        const obstacle = new Obstacle(
+            this,
+            obstacleInfo.x,
+            obstacleInfo.y,
+            obstacleInfo.size,
+            obstacleInfo.id,
+            obstacleInfo.health
+        );
+        
+        // Add to tracking objects
+        this.obstacles[obstacleInfo.id] = obstacle;
+        this.obstaclesGroup.add(obstacle.sprite);
+    }
+    
+    /**
+     * Handle collision between projectile and obstacle
+     * @param {Phaser.GameObjects.Sprite} projectileSprite - The projectile sprite
+     * @param {Phaser.GameObjects.Sprite} obstacleSprite - The obstacle sprite
+     */
+    handleProjectileObstacleHit(projectileSprite, obstacleSprite) {
+        // Find projectile instance
+        let projectileId = null;
+        for (const id in this.projectiles) {
+            if (this.projectiles[id].sprite === projectileSprite) {
+                projectileId = id;
+                break;
+            }
+        }
+        
+        if (projectileId) {
+            // Find and destroy the projectile
+            const projectile = this.projectiles[projectileId];
+            if (projectile) {
+                projectile.destroy();
+                delete this.projectiles[projectileId];
+            }
+            
+            // Notify server to destroy projectile
+            this.socketManager.destroyProjectile(projectileId);
+            
+            // Create impact effect
+            this.createHitImpact(projectileSprite.x, projectileSprite.y);
+        }
     }
     
     createPlayer(playerInfo) {
@@ -496,8 +1081,10 @@ class MainScene extends Phaser.Scene {
         // Initialize player properties
         this.player.setHealth(playerInfo.health);
         this.player.setAmmo(playerInfo.ammo);
+        this.player.score = playerInfo.score || 0;
         this.ui.updateHealthBar(this.player.health);
         this.ui.updateAmmoCounter(this.player.ammo);
+        this.ui.updateScoreCounter(this.player.score);
     }
     
     addOtherPlayer(playerInfo) {
@@ -662,8 +1249,9 @@ class MainScene extends Phaser.Scene {
             this.swordSound.play({ volume: 0.6 });
         }
         
-        // Reset the hit players tracking for this new sword swing
+        // Reset the hit tracking for this new sword swing
         this.playersHitBySword = {};
+        this.obstaclesHitBySword = {};
         
         // Create a simple sword using our new class
         const sword = new SimpleSword(
@@ -696,6 +1284,31 @@ class MainScene extends Phaser.Scene {
                 // Create hit effect on the other player
                 if (this.otherPlayers[otherPlayerId]) {
                     this.otherPlayers[otherPlayerId].createHitEffect();
+                }
+            }
+        );
+        
+        // Check for sword hits on obstacles
+        this.physics.add.overlap(
+            swordHitbox,
+            this.obstaclesGroup,
+            (sword, obstacleSprite) => {
+                // Get obstacle ID
+                const obstacleId = obstacleSprite.obstacleId;
+                
+                // Check if this obstacle was already hit by this sword swing
+                if (this.obstaclesHitBySword[obstacleId]) return;
+                
+                // Mark this obstacle as hit by this sword swing
+                this.obstaclesHitBySword[obstacleId] = true;
+                
+                // Notify server about the sword hit on obstacle
+                this.socketManager.obstacleHit(obstacleId);
+                
+                // Create temporary visual effect locally - actual change will come from server
+                const obstacle = this.obstacles[obstacleId];
+                if (obstacle) {
+                    obstacle.createHitEffect();
                 }
             }
         );
@@ -744,6 +1357,61 @@ class MainScene extends Phaser.Scene {
         this.isDefeated = false;
     }
     
+    /**
+     * Show the connection status on screen
+     * @param {boolean} connected - Whether we're connected to the server
+     * @param {string} message - Optional message to show
+     */
+    showConnectionStatus(connected, message = '') {
+        // Remove existing status text if it exists
+        if (this.connectionStatusText) {
+            this.connectionStatusText.destroy();
+        }
+        
+        // Create message text
+        let statusText = connected ? 'Connected to server' : 'Disconnected from server';
+        if (message && !connected) {
+            statusText += `: ${message}`;
+        }
+        
+        // Create status text
+        this.connectionStatusText = this.add.text(
+            10, 
+            10, 
+            statusText, 
+            {
+                fontSize: '14px',
+                fontStyle: connected ? 'normal' : 'bold',
+                fill: connected ? '#00FF00' : '#FF0000',
+                stroke: '#000000',
+                strokeThickness: 2,
+                backgroundColor: '#00000099',
+                padding: { x: 5, y: 2 }
+            }
+        );
+        this.connectionStatusText.setScrollFactor(0);
+        this.connectionStatusText.setDepth(1000);
+        
+        // If connected, fade out after 5 seconds
+        if (connected) {
+            this.time.delayedCall(5000, () => {
+                if (this.connectionStatusText) {
+                    this.tweens.add({
+                        targets: this.connectionStatusText,
+                        alpha: 0,
+                        duration: 1000,
+                        onComplete: () => {
+                            if (this.connectionStatusText) {
+                                this.connectionStatusText.destroy();
+                                this.connectionStatusText = null;
+                            }
+                        }
+                    });
+                }
+            });
+        }
+    }
+    
     update() {
         // Skip if player not created yet
         if (!this.player) return;
@@ -766,8 +1434,10 @@ class MainScene extends Phaser.Scene {
             down: this.cursors.down.isDown
         };
         
-        // Send inputs to server
-        this.socketManager.sendPlayerInput(inputs);
+        // Only send inputs if we're connected
+        if (this.socketManager.connected) {
+            this.socketManager.sendPlayerInput(inputs);
+        }
         
         // Handle local animation based on inputs
         let moving = false;

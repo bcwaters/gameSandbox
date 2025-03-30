@@ -4,19 +4,88 @@
     <title>Multiplayer Game Sandbox</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js"></script>
+    <script>
+        // Add global error handler to catch and log all JavaScript errors
+        window.onerror = function(message, source, lineno, colno, error) {
+            console.error('GLOBAL ERROR:', message, 'at', source, 'line', lineno, 'column', colno, error);
+            // Show error to user
+            const errorDiv = document.createElement('div');
+            errorDiv.style.position = 'absolute';
+            errorDiv.style.top = '10px';
+            errorDiv.style.left = '10px';
+            errorDiv.style.background = 'rgba(255,0,0,0.8)';
+            errorDiv.style.padding = '10px';
+            errorDiv.style.borderRadius = '5px';
+            errorDiv.style.color = 'white';
+            errorDiv.style.zIndex = 9999;
+            errorDiv.style.maxWidth = '80%';
+            errorDiv.innerHTML = `<strong>Error:</strong> ${message}<br>at ${source} (line ${lineno}, col ${colno})`;
+            document.body.appendChild(errorDiv);
+            return false;
+        };
+
+        // Add resource error handler to catch failed scripts and assets
+        window.addEventListener('error', function(e) {
+            if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'IMG')) {
+                console.error('RESOURCE ERROR:', e.target.src || e.target.href);
+                const errorDiv = document.createElement('div');
+                errorDiv.style.position = 'absolute';
+                errorDiv.style.top = '50px';
+                errorDiv.style.left = '10px';
+                errorDiv.style.background = 'rgba(255,0,0,0.8)';
+                errorDiv.style.padding = '10px';
+                errorDiv.style.borderRadius = '5px';
+                errorDiv.style.color = 'white';
+                errorDiv.style.zIndex = 9999;
+                errorDiv.innerHTML = `Failed to load: ${e.target.src || e.target.href}`;
+                document.body.appendChild(errorDiv);
+            }
+        }, true);
+        
+        console.log('Global error handlers set up');
+    </script>
+    <!-- Core libraries -->
+    <script src="/socket.io/socket.io.js" onerror="console.error('Failed to load Socket.IO library'); alert('Failed to load Socket.IO - server connection will not work');"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.55.2/phaser.min.js" onerror="console.error('Failed to load Phaser library'); alert('Failed to load game engine (Phaser)');"></script>
     
-    <!-- Load game modules -->
+    <!-- Check if Phaser loaded correctly -->
+    <script>
+        if (typeof Phaser === 'undefined') {
+            console.error('ERROR: Phaser is not defined after script load!');
+            document.body.innerHTML = '<div style="color: white; background: red; padding: 20px; margin: 20px; border-radius: 10px;"><h2>Critical Error</h2><p>Failed to load the Phaser game engine. Please check your internet connection and try again.</p></div>';
+        } else {
+            console.log('Phaser library loaded successfully, version:', Phaser.VERSION);
+        }
+    </script>
+    
+    <!-- Load game modules in dependency order -->
     <script src="js/config/GameConfig.js"></script>
-    <script src="js/managers/AnimationManager.js"></script>
     <script src="js/loaders/AssetLoader.js"></script>
     <script src="js/networking/SocketManager.js"></script>
+    <script src="js/managers/AnimationManager.js"></script>
+    
+    <!-- Entity classes -->
     <script src="js/entities/Player.js"></script>
     <script src="js/entities/VisibleProjectile.js"></script>
     <script src="js/entities/SimpleSword.js"></script>
+    <script src="js/entities/Obstacle.js"></script>
+    <!-- Coin temporarily disabled until issues are fixed -->
+    <!-- <script src="js/entities/Coin.js"></script> -->
+    
+    <!-- UI components -->
     <script src="js/ui/UserInterface.js"></script>
+    
+    <!-- Scene classes - MUST be loaded before game.js -->
     <script src="js/scenes/MainScene.js"></script>
+    
+    <!-- IMPORTANT: Add a small delay to ensure MainScene is defined before initialization -->
+    <script>
+        // Check if MainScene is properly defined
+        console.log('Before game.js load, MainScene defined:', typeof MainScene !== 'undefined');
+        window.gameReady = typeof MainScene !== 'undefined';
+    </script>
+    
+    <!-- Main game initialization - must be loaded last -->
     <script src="js/game.js"></script>
     
     <style>

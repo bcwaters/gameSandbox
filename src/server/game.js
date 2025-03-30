@@ -5,6 +5,8 @@
 const config = require('./config');
 const PlayerManager = require('./players');
 const ProjectileManager = require('./projectiles');
+const ObstacleManager = require('./obstacles');
+// const CoinManager = require('./coins'); // Temporarily commented out
 const PhysicsManager = require('./physics');
 
 class Game {
@@ -12,6 +14,8 @@ class Game {
     this.io = io;
     this.playerManager = new PlayerManager(io);
     this.projectileManager = new ProjectileManager(io);
+    this.obstacleManager = new ObstacleManager(io);
+    // this.coinManager = new CoinManager(io); // Temporarily commented out
     this.physicsManager = new PhysicsManager();
     this.lastUpdateTime = Date.now();
   }
@@ -20,6 +24,10 @@ class Game {
    * Initialize game event handlers
    */
   initialize() {
+    // Initialize obstacles
+    this.obstacleManager.initializeObstacles();
+    
+    // Setup socket connection handler
     this.io.on('connection', this.handlePlayerConnection.bind(this));
     
     // Start the game loop
@@ -38,6 +46,8 @@ class Game {
     
     // Send current game state to the new player
     socket.emit('currentPlayers', this.playerManager.getAllPlayers());
+    socket.emit('currentObstacles', this.obstacleManager.getSerializedObstacles());
+    // socket.emit('currentCoins', this.coinManager.getSerializedCoins()); // Temporarily commented out
     
     // Inform other players of the new player
     socket.broadcast.emit('newPlayer', player);
@@ -105,7 +115,16 @@ class Game {
     
     // Handle player defeat
     socket.on('playerDefeated', (data) => {
+      // Get player before marking as defeated (to get position)
+      const player = this.playerManager.getPlayer(data.playerId);
+      
+      // Mark player as defeated
       this.playerManager.defeatPlayer(data.playerId);
+      
+      // Drop a coin at the player's position when defeated - temporarily commented out
+      // if (player) {
+      //   this.coinManager.dropCoinAtPlayerPosition(player);
+      // }
     });
     
     // Handle player respawn
@@ -132,7 +151,7 @@ class Game {
       }
     });
     
-    // Handle sword hit
+    // Handle sword hit on player
     socket.on('swordHit', (hitInfo) => {
       const hitPlayer = this.playerManager.hitPlayer(
         hitInfo.hitPlayerId, 
@@ -146,10 +165,48 @@ class Game {
       }
     });
     
+    // Handle sword hit on obstacle
+    socket.on('obstacleHit', (hitInfo) => {
+      this.obstacleManager.handleSwordHit(
+        hitInfo.obstacleId,
+        socket.id
+      );
+    });
+    
     // Handle setting player name
     socket.on('setPlayerName', (data) => {
       this.playerManager.setPlayerName(socket.id, data.name);
     });
+    
+    // Handle coin collection - temporarily commented out
+    /*
+    socket.on('collectCoin', (data) => {
+      try {
+        if (!data || !data.coinId) {
+          console.error('Invalid collectCoin data:', data);
+          return;
+        }
+        
+        console.log(`Player ${socket.id} attempting to collect coin ${data.coinId}`);
+        
+        const coin = this.coinManager.collectCoin(data.coinId, socket.id);
+        
+        // If coin was collected successfully, increase player's score
+        if (coin && coin.value) {
+          this.playerManager.increaseScore(socket.id, coin.value);
+        } else {
+          // Coin might have already been collected by another player
+          // Send an acknowledgment anyway to sync client state
+          socket.emit('coinRemoved', {
+            coinId: data.coinId,
+            collected: true
+          });
+        }
+      } catch (error) {
+        console.error('Error in collectCoin handler:', error);
+      }
+    });
+    */
   }
 
   /**
@@ -173,7 +230,8 @@ class Game {
     // Update player positions based on inputs
     this.physicsManager.updatePlayerPositions(
       this.playerManager.getAllPlayers(), 
-      deltaTime
+      deltaTime,
+      this.obstacleManager // Pass obstacle manager for collision detection
     );
     
     // Handle player-player collisions
@@ -199,14 +257,23 @@ class Game {
             shooterId: shooterId
           });
         }
-      }
+      },
+      this.obstacleManager // Pass obstacle manager for collision detection
     );
     
     // Send game state to all clients
-    this.io.emit('gameState', {
+    const gameState = {
       players: this.playerManager.getSerializedPlayers(),
-      projectiles: this.projectileManager.getSerializedProjectiles()
-    });
+      projectiles: this.projectileManager.getSerializedProjectiles(),
+      obstacles: this.obstacleManager.getSerializedObstacles()
+    };
+    
+    // Coins temporarily disabled
+    // if (Math.floor(Date.now() / 1000) % 5 === 0) {
+    //   gameState.coins = this.coinManager.getSerializedCoins();
+    // }
+    
+    this.io.emit('gameState', gameState);
   }
 }
 

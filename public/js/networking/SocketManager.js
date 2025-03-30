@@ -3,24 +3,77 @@
  */
 class SocketManager {
     constructor() {
-        this.socket = io();
+        console.log('Initializing SocketManager...');
+        
+        try {
+            console.log('Attempting to connect to server with socket.io');
+            // Connect to the server using default URL (current host)
+            this.socket = io({
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                timeout: 20000
+            });
+            console.log('Socket.io connection object created successfully');
+        } catch (error) {
+            console.error('CRITICAL ERROR: Failed to create socket.io connection:', error);
+            // Create a fallback socket object to prevent undefined errors
+            this.socket = {
+                on: () => console.error('Socket not available'),
+                emit: () => console.error('Socket not available'),
+                id: 'socket-error'
+            };
+            
+            // Show error to user
+            const errorDiv = document.createElement('div');
+            errorDiv.style.position = 'absolute';
+            errorDiv.style.top = '50%';
+            errorDiv.style.left = '50%';
+            errorDiv.style.transform = 'translate(-50%, -50%)';
+            errorDiv.style.background = 'rgba(255,0,0,0.8)';
+            errorDiv.style.padding = '20px';
+            errorDiv.style.borderRadius = '5px';
+            errorDiv.style.color = 'white';
+            errorDiv.style.zIndex = 9999;
+            errorDiv.innerHTML = `<h2>Connection Failed</h2><p>Failed to connect to game server: ${error.message}</p>`;
+            document.body.appendChild(errorDiv);
+        }
+        
         this.callbacks = {
+            connect: [],
+            disconnect: [],
+            reconnect: [],
+            reconnect_attempt: [],
+            reconnect_error: [],
+            connect_error: [],
             currentPlayers: [],
             newPlayer: [],
             playerDisconnected: [],
             playerMoved: [],
             projectileFired: [],
             projectileDestroyed: [],
+            projectileImpact: [],
             playerHit: [],
             playerSwordHit: [],
             gameState: [],
             playerDefeated: [],
             playerRespawned: [],
             swordUsed: [],
-            playerNameUpdate: []
+            playerNameUpdate: [],
+            playerScoreUpdate: [],
+            currentObstacles: [],
+            newObstacle: [],
+            obstacleHit: [],
+            obstacleDestroyed: [],
+            currentCoins: [],
+            coinSpawned: [],
+            coinCollected: [],
+            coinRemoved: []
         };
         
         this.playerId = null;
+        this.connected = false;
         
         // Set up event listeners
         this.setupEventListeners();
@@ -30,10 +83,50 @@ class SocketManager {
      * Set up all socket event listeners
      */
     setupEventListeners() {
-        // Store player ID when connected
+        // Connection events
         this.socket.on('connect', () => {
             this.playerId = this.socket.id;
+            this.connected = true;
             console.log('Connected to server with ID:', this.playerId);
+            
+            // Trigger callbacks
+            this.callbacks.connect.forEach(callback => callback());
+        });
+        
+        this.socket.on('disconnect', (reason) => {
+            this.connected = false;
+            console.log('Disconnected from server:', reason);
+            
+            // Trigger callbacks
+            this.callbacks.disconnect.forEach(callback => callback(reason));
+        });
+        
+        this.socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            
+            // Trigger callbacks
+            this.callbacks.connect_error.forEach(callback => callback(error));
+        });
+        
+        this.socket.on('reconnect_attempt', (attemptNumber) => {
+            console.log('Attempting to reconnect:', attemptNumber);
+            
+            // Trigger callbacks
+            this.callbacks.reconnect_attempt.forEach(callback => callback(attemptNumber));
+        });
+        
+        this.socket.on('reconnect', (attemptNumber) => {
+            console.log('Reconnected after attempts:', attemptNumber);
+            
+            // Trigger callbacks
+            this.callbacks.reconnect.forEach(callback => callback(attemptNumber));
+        });
+        
+        this.socket.on('reconnect_error', (error) => {
+            console.error('Reconnection error:', error);
+            
+            // Trigger callbacks
+            this.callbacks.reconnect_error.forEach(callback => callback(error));
         });
         
         // Handle incoming events from server
@@ -59,6 +152,10 @@ class SocketManager {
         
         this.socket.on('projectileDestroyed', (projectileId) => {
             this.callbacks.projectileDestroyed.forEach(callback => callback(projectileId));
+        });
+        
+        this.socket.on('projectileImpact', (impactInfo) => {
+            this.callbacks.projectileImpact.forEach(callback => callback(impactInfo));
         });
         
         this.socket.on('playerHit', (hitInfo) => {
@@ -87,6 +184,45 @@ class SocketManager {
         
         this.socket.on('playerNameUpdate', (playerInfo) => {
             this.callbacks.playerNameUpdate.forEach(callback => callback(playerInfo));
+        });
+        
+        // Obstacle-specific events
+        this.socket.on('currentObstacles', (obstacles) => {
+            this.callbacks.currentObstacles.forEach(callback => callback(obstacles));
+        });
+        
+        this.socket.on('newObstacle', (obstacleInfo) => {
+            this.callbacks.newObstacle.forEach(callback => callback(obstacleInfo));
+        });
+        
+        this.socket.on('obstacleHit', (hitInfo) => {
+            this.callbacks.obstacleHit.forEach(callback => callback(hitInfo));
+        });
+        
+        this.socket.on('obstacleDestroyed', (destroyInfo) => {
+            this.callbacks.obstacleDestroyed.forEach(callback => callback(destroyInfo));
+        });
+        
+        // Coin-specific events
+        this.socket.on('currentCoins', (coins) => {
+            this.callbacks.currentCoins.forEach(callback => callback(coins));
+        });
+        
+        this.socket.on('coinSpawned', (coinInfo) => {
+            this.callbacks.coinSpawned.forEach(callback => callback(coinInfo));
+        });
+        
+        this.socket.on('coinCollected', (collectionInfo) => {
+            this.callbacks.coinCollected.forEach(callback => callback(collectionInfo));
+        });
+        
+        this.socket.on('coinRemoved', (removalInfo) => {
+            this.callbacks.coinRemoved.forEach(callback => callback(removalInfo));
+        });
+        
+        // Player score update
+        this.socket.on('playerScoreUpdate', (scoreInfo) => {
+            this.callbacks.playerScoreUpdate.forEach(callback => callback(scoreInfo));
         });
     }
     
@@ -186,6 +322,17 @@ class SocketManager {
     }
     
     /**
+     * Send obstacle hit event to the server
+     * @param {string} obstacleId - The ID of the hit obstacle
+     */
+    obstacleHit(obstacleId) {
+        this.socket.emit('obstacleHit', {
+            obstacleId: obstacleId,
+            playerId: this.playerId
+        });
+    }
+    
+    /**
      * Send set player name event to the server
      * @param {string} name - The new player name
      */
@@ -209,6 +356,17 @@ class SocketManager {
      */
     respawnPlayer() {
         this.socket.emit('respawnPlayer', {
+            playerId: this.playerId
+        });
+    }
+    
+    /**
+     * Send coin collection event to the server
+     * @param {string} coinId - The ID of the collected coin
+     */
+    collectCoin(coinId) {
+        this.socket.emit('collectCoin', {
+            coinId: coinId,
             playerId: this.playerId
         });
     }

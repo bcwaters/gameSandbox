@@ -13,9 +13,14 @@ class PhysicsManager {
    * Update player positions based on inputs
    * @param {Object} players - The players object
    * @param {number} deltaTime - Time elapsed since last update in seconds
+   * @param {Object} obstacleManager - The obstacle manager for collision detection
    */
-  updatePlayerPositions(players, deltaTime) {
+  updatePlayerPositions(players, deltaTime, obstacleManager) {
     Object.values(players).forEach(player => {
+      // Store original position for collision reversion
+      const originalX = player.x;
+      const originalY = player.y;
+      
       // Apply inputs to update player position
       const inputs = player.inputs || { left: false, right: false, up: false, down: false };
       const speed = config.PLAYER_SPEED * deltaTime;
@@ -60,6 +65,19 @@ class PhysicsManager {
       // World bounds checking
       player.x = Math.max(0, Math.min(player.x, config.WORLD_WIDTH));
       player.y = Math.max(0, Math.min(player.y, config.WORLD_HEIGHT));
+      
+      // Check for obstacle collision if obstacle manager is provided
+      if (obstacleManager && moving) {
+        // Player collision radius (approximately half player width)
+        const playerRadius = 15;
+        
+        // Check if new position collides with any obstacle
+        if (obstacleManager.checkPointCollision(player.x, player.y, playerRadius)) {
+          // If collision, revert to original position
+          player.x = originalX;
+          player.y = originalY;
+        }
+      }
     });
   }
 

@@ -127,10 +127,15 @@ class ProjectileManager {
    * @param {number} deltaTime - Time elapsed since last update in seconds
    * @param {Object} players - The players object
    * @param {function} onHit - Callback function when a projectile hits a player
+   * @param {Object} obstacleManager - The obstacle manager for collision detection
    */
-  update(deltaTime, players, onHit) {
+  update(deltaTime, players, onHit, obstacleManager) {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const projectile = this.projectiles[i];
+      
+      // Store original position for obstacle collision check
+      const originalX = projectile.x;
+      const originalY = projectile.y;
       
       // Update position
       projectile.x += projectile.velocityX * deltaTime;
@@ -143,6 +148,27 @@ class ProjectileManager {
         this.projectiles.splice(i, 1);
         this.io.emit('projectileDestroyed', projectile.id);
         continue;
+      }
+      
+      // Check for collision with obstacles
+      if (obstacleManager) {
+        // Projectile collision radius
+        const projectileRadius = 8;
+        
+        // Check if new position collides with any obstacle
+        if (obstacleManager.checkPointCollision(projectile.x, projectile.y, projectileRadius)) {
+          // Remove the projectile
+          this.projectiles.splice(i, 1);
+          this.io.emit('projectileDestroyed', projectile.id);
+          
+          // Create a projectile impact effect at the collision point
+          this.io.emit('projectileImpact', {
+            x: originalX + (projectile.x - originalX) * 0.9, // Place impact just before the collision
+            y: originalY + (projectile.y - originalY) * 0.9
+          });
+          
+          continue; // Skip further checks for this projectile
+        }
       }
       
       // Check for collision with players

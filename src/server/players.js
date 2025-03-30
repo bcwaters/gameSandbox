@@ -24,6 +24,7 @@ class PlayerManager {
       moving: false,
       health: config.MAX_HEALTH,
       ammo: config.MAX_AMMO,
+      score: 0, // Track player's score
       lastHitTime: 0,
       name: "Player" + Math.floor(Math.random() * 1000),
       inputs: {
@@ -119,7 +120,8 @@ class PlayerManager {
         x: player.x,
         y: player.y,
         health: player.health,
-        ammo: player.ammo
+        ammo: player.ammo,
+        score: player.score // Include score in respawn data
       });
     }
   }
@@ -182,6 +184,7 @@ class PlayerManager {
       moving: player.moving,
       health: player.health,
       ammo: player.ammo,
+      score: player.score,
       name: player.name
     }));
   }
@@ -201,6 +204,43 @@ class PlayerManager {
    */
   getPlayer(socketId) {
     return this.players[socketId] || null;
+  }
+  
+  /**
+   * Increase a player's score
+   * @param {string} socketId - The socket ID of the player
+   * @param {number} points - The number of points to add
+   * @returns {boolean} Whether the score was updated successfully
+   */
+  increaseScore(socketId, points) {
+    // Validate inputs
+    if (!socketId || points === undefined || isNaN(points)) {
+      console.error('Invalid parameters for increaseScore:', socketId, points);
+      return false;
+    }
+    
+    if (this.players[socketId]) {
+      // Initialize score if not present
+      if (this.players[socketId].score === undefined) {
+        this.players[socketId].score = 0;
+      }
+      
+      // Add points to score
+      this.players[socketId].score += points;
+      
+      console.log(`Player ${socketId} score increased by ${points} to ${this.players[socketId].score}`);
+      
+      // Broadcast the score update to all clients
+      this.io.emit('playerScoreUpdate', {
+        playerId: socketId,
+        score: this.players[socketId].score
+      });
+      
+      return true;
+    } else {
+      console.error(`Cannot increase score: player ${socketId} does not exist`);
+      return false;
+    }
   }
 }
 
