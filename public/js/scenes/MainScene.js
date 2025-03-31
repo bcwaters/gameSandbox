@@ -343,32 +343,123 @@ class MainScene extends Phaser.Scene {
         reloadLabel.setDepth(101);
         reloadLabel.setScrollFactor(0);
         
-        // Track multiple pointers to allow joystick + buttons simultaneously
-        this.activePointers = {};
+        // Create a separate floating joystick that follows initial touch
+        this.floatingJoystick = true; // Enable floating joystick mode
         
-        // Virtual joystick implementation
+        // Initialize touch states
+        this.joystickActive = false;
+        this.joystickPointer = null;
+        this.joystickInputX = 0;
+        this.joystickInputY = 0;
+        
+        // Set up auto-fire and button indicators
+        this.autoFireEnabled = false;
+        this.autoFireInterval = null;
+        this.buttonStates = {
+            shoot: false,
+            sword: false,
+            reload: false
+        };
+        
+        // Add direct button handlers (separate from pointer events)
+        shootButton.on('pointerdown', () => {
+            if (this.canPressShoot) {
+                this.buttonStates.shoot = true;
+                // Start auto-fire if player has ammo
+                this.startAutoFire();
+            }
+        });
+        
+        shootButton.on('pointerout', () => {
+            this.buttonStates.shoot = false;
+            this.stopAutoFire();
+        });
+        
+        shootButton.on('pointerup', () => {
+            this.buttonStates.shoot = false;
+            this.stopAutoFire();
+        });
+        
+        swordButton.on('pointerdown', () => {
+            if (this.canPressSword) {
+                this.buttonStates.sword = true;
+                this.canPressSword = false;
+                this.useSword();
+                
+                // Add cooldown
+                this.time.delayedCall(300, () => {
+                    this.canPressSword = true;
+                    // If button is still being held, use sword again
+                    if (this.buttonStates.sword) {
+                        this.useSword();
+                    }
+                });
+            }
+        });
+        
+        swordButton.on('pointerout', () => {
+            this.buttonStates.sword = false;
+        });
+        
+        swordButton.on('pointerup', () => {
+            this.buttonStates.sword = false;
+        });
+        
+        reloadButton.on('pointerdown', () => {
+            if (this.canPressReload) {
+                this.buttonStates.reload = true;
+                this.canPressReload = false;
+                
+                // Only reload if we're not at max ammo
+                if (this.player && this.player.ammo < this.player.maxAmmo) {
+                    // Reset ammo to max
+                    this.player.setAmmo(this.player.maxAmmo);
+                    this.ui.updateAmmoCounter(this.player.ammo);
+                    
+                    // Send reload event to server
+                    this.socketManager.reloadAmmo();
+                }
+                
+                // Add cooldown
+                this.time.delayedCall(500, () => {
+                    this.canPressReload = true;
+                });
+            }
+        });
+        
+        reloadButton.on('pointerout', () => {
+            this.buttonStates.reload = false;
+        });
+        
+        reloadButton.on('pointerup', () => {
+            this.buttonStates.reload = false;
+        });
+        
+        // Joystick handlers (independent from buttons)
         this.input.on('pointerdown', (pointer) => {
-            // Store this pointer
-            this.activePointers[pointer.id] = pointer;
-            
-            // Check if this is a joystick activation (left side)
+            // Only handle left side touches for joystick
             if (pointer.x < gameWidth / 2 && !this.joystickActive) {
-                // Left side - joystick
                 this.joystickActive = true;
                 this.joystickPointer = pointer;
-                this.joystickStartX = joystickX;
-                this.joystickStartY = joystickY;
+                
+                if (this.floatingJoystick) {
+                    // For floating joystick, center is at touch point
+                    this.joystickStartX = pointer.x;
+                    this.joystickStartY = pointer.y;
+                    joystickBase.x = pointer.x;
+                    joystickBase.y = pointer.y;
+                    joystickThumb.x = pointer.x;
+                    joystickThumb.y = pointer.y;
+                } else {
+                    // For fixed joystick, use predefined position
+                    this.joystickStartX = joystickX;
+                    this.joystickStartY = joystickY;
+                }
             }
-            
-            // Check for button presses (can happen while joystick is active)
-            this.checkButtonPress(pointer);
         });
         
         this.input.on('pointermove', (pointer) => {
-            // Update stored pointer
-            this.activePointers[pointer.id] = pointer;
-            
-            // Handle joystick movement
+            // Only update joystick if this is the active joystick pointer
             if (this.joystickActive && this.joystickPointer && this.joystickPointer.id === pointer.id) {
                 // Calculate joystick position
                 const dx = pointer.x - this.joystickStartX;
@@ -392,91 +483,72 @@ class MainScene extends Phaser.Scene {
                 this.joystickInputX = (thumbX - this.joystickStartX) / maxDistance;
                 this.joystickInputY = (thumbY - this.joystickStartY) / maxDistance;
             }
-            
-            // Check if any other active pointer is over a button (for drag in)
-            this.checkButtonPress(pointer);
         });
         
         this.input.on('pointerup', (pointer) => {
-            // Remove from active pointers
-            delete this.activePointers[pointer.id];
-            
-            // Handle joystick release
+            // Reset joystick if this is the active joystick pointer
             if (this.joystickActive && this.joystickPointer && this.joystickPointer.id === pointer.id) {
-                // Reset joystick
                 this.joystickActive = false;
                 this.joystickPointer = null;
                 this.joystickInputX = 0;
                 this.joystickInputY = 0;
-                joystickThumb.x = joystickX;
-                joystickThumb.y = joystickY;
+                
+                // Reset joystick visuals
+                if (!this.floatingJoystick) {
+                    // Fixed joystick returns to center
+                    joystickThumb.x = joystickX;
+                    joystickThumb.y = joystickY;
+                } else {
+                    // Floating joystick hides until next use
+                    joystickBase.alpha = 0.3;
+                    joystickThumb.alpha = 0.3;
+                    // Reset position to default
+                    joystickBase.x = joystickX; 
+                    joystickBase.y = joystickY;
+                    joystickThumb.x = joystickX;
+                    joystickThumb.y = joystickY;
+                }
             }
         });
-        
-        // Helper function to check button press with any pointer
-        this.checkButtonPress = (pointer) => {
-            // Check if pointer is over any buttons
-            const shoot = Phaser.Geom.Circle.Contains(
-                new Phaser.Geom.Circle(shootButtonX, shootButtonY, buttonRadius),
-                pointer.x, pointer.y
-            );
-            
-            const sword = Phaser.Geom.Circle.Contains(
-                new Phaser.Geom.Circle(swordButtonX, swordButtonY, buttonRadius),
-                pointer.x, pointer.y
-            );
-            
-            const reload = Phaser.Geom.Circle.Contains(
-                new Phaser.Geom.Circle(reloadButtonX, reloadButtonY, buttonRadius),
-                pointer.x, pointer.y
-            );
-            
-            // Fire actions if buttons are pressed (with cooldowns to prevent rapid fire)
-            if (shoot && this.canPressShoot) {
-                this.canPressShoot = false;
-                // Check if player exists and has ammo
-                if (this.player && this.player.ammo > 0) {
-                    this.fireProjectile();
-                    this.player.setAmmo(this.player.ammo - 1);
-                    this.ui.updateAmmoCounter(this.player.ammo);
-                }
-                // Add cooldown to prevent rapid fire
-                this.time.delayedCall(200, () => {
-                    this.canPressShoot = true;
-                });
-            }
-            
-            if (sword && this.canPressSword) {
-                this.canPressSword = false;
-                this.useSword();
-                // Add cooldown
-                this.time.delayedCall(300, () => {
-                    this.canPressSword = true;
-                });
-            }
-            
-            if (reload && this.canPressReload) {
-                this.canPressReload = false;
-                // Only reload if we're not at max ammo
-                if (this.player && this.player.ammo < this.player.maxAmmo) {
-                    // Reset ammo to max
-                    this.player.setAmmo(this.player.maxAmmo);
-                    this.ui.updateAmmoCounter(this.player.ammo);
-                    
-                    // Send reload event to server
-                    this.socketManager.reloadAmmo();
-                }
-                // Add cooldown
-                this.time.delayedCall(500, () => {
-                    this.canPressReload = true;
-                });
-            }
-        };
         
         // Initialize button cooldowns
         this.canPressShoot = true;
         this.canPressSword = true;
         this.canPressReload = true;
+        
+        // Auto-fire implementation for shoot button
+        this.startAutoFire = () => {
+            // Clear any existing interval
+            this.stopAutoFire();
+            
+            // Fire immediately
+            this.tryFireProjectile();
+            
+            // Set up interval for continuous firing
+            this.autoFireInterval = setInterval(() => {
+                if (this.buttonStates.shoot) {
+                    this.tryFireProjectile();
+                } else {
+                    this.stopAutoFire();
+                }
+            }, 200); // Fire every 200ms
+        };
+        
+        this.stopAutoFire = () => {
+            if (this.autoFireInterval) {
+                clearInterval(this.autoFireInterval);
+                this.autoFireInterval = null;
+            }
+        };
+        
+        this.tryFireProjectile = () => {
+            // Check if player exists and has ammo
+            if (this.player && this.player.ammo > 0) {
+                this.fireProjectile();
+                this.player.setAmmo(this.player.ammo - 1);
+                this.ui.updateAmmoCounter(this.player.ammo);
+            }
+        };
         
         // Store mobile controls references
         this.mobileControls = {

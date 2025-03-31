@@ -9,6 +9,7 @@ class ObstacleManager {
     this.io = io;
     this.obstacles = {};
     this.nextId = 0;
+    this.obstacleIds = []; // Array to track obstacle IDs in order of creation
   }
 
   /**
@@ -17,6 +18,7 @@ class ObstacleManager {
   initializeObstacles() {
     // Clear existing obstacles
     this.obstacles = {};
+    this.obstacleIds = [];
 
     // Create the configured number of obstacles
     for (let i = 0; i < config.OBSTACLE_COUNT; i++) {
@@ -83,8 +85,27 @@ class ObstacleManager {
       health: config.OBSTACLE_MAX_HEALTH
     };
 
-    // Add to obstacles map
+    // Check if we already have the maximum number of obstacles
+    if (this.obstacleIds.length >= config.MAX_OBSTACLES) {
+      // Remove the oldest obstacle
+      const oldestId = this.obstacleIds.shift();
+      
+      // Broadcast destruction event for the oldest obstacle
+      this.io.emit('obstacleDestroyed', {
+        obstacleId: oldestId,
+        playerId: null // Not destroyed by any player
+      });
+      
+      // Remove it from the map
+      delete this.obstacles[oldestId];
+      console.log(`Removed oldest obstacle ${oldestId} to make room for new one`);
+    }
+
+    // Add to obstacles map and tracking array
     this.obstacles[id] = obstacle;
+    this.obstacleIds.push(id);
+    
+    console.log(`Created obstacle ${id}, total count: ${this.obstacleIds.length}/${config.MAX_OBSTACLES}`);
 
     return obstacle;
   }
@@ -148,6 +169,14 @@ class ObstacleManager {
 
       // Remove from obstacles map
       delete this.obstacles[obstacleId];
+      
+      // Remove from the tracking array
+      const index = this.obstacleIds.indexOf(obstacleId);
+      if (index !== -1) {
+        this.obstacleIds.splice(index, 1);
+        console.log(`Removed obstacle ${obstacleId} (destroyed by player), total count: ${this.obstacleIds.length}/${config.MAX_OBSTACLES}`);
+      }
+      
       return null;
     }
 
