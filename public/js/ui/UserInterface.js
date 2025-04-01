@@ -203,20 +203,38 @@ class UserInterface {
         // Set up event listeners
         this.nameInput.addEventListener('focus', () => {
             this.isInputFocused = true;
+            
             // Visual feedback when input is focused
             document.getElementById('nameInputContainer').style.backgroundColor = 'rgba(0,100,150,0.8)';
             document.getElementById('nameInputContainer').style.boxShadow = '0 0 15px rgba(0,150,255,0.6)';
             this.nameInput.style.backgroundColor = '#333';
             this.nameInput.style.borderColor = '#0af';
+            
+            // Completely disable Phaser keyboard input
+            if (this.scene && this.scene.input && this.scene.input.keyboard) {
+                this.scene.input.keyboard.enabled = false;
+            }
         });
         
         this.nameInput.addEventListener('blur', () => {
             this.isInputFocused = false;
+            
             // Reset visual style when input loses focus
             document.getElementById('nameInputContainer').style.backgroundColor = 'rgba(0,0,0,0.7)';
             document.getElementById('nameInputContainer').style.boxShadow = 'none';
             this.nameInput.style.backgroundColor = '#222';
             this.nameInput.style.borderColor = '#555';
+            
+            // Re-enable Phaser keyboard input
+            if (this.scene && this.scene.input && this.scene.input.keyboard) {
+                this.scene.input.keyboard.enabled = true;
+            }
+        });
+        
+        // Prevent game controls from capturing keydown events during typing
+        this.nameInput.addEventListener('keydown', (e) => {
+            // Stop event propagation to prevent game controls
+            e.stopPropagation();
         });
         
         this.setNameBtn.addEventListener('click', () => this.handleSetPlayerName());
