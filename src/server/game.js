@@ -18,6 +18,11 @@ class Game {
     this.coinManager = new CoinManager(io); // Re-enabled coin manager
     this.physicsManager = new PhysicsManager();
     this.lastUpdateTime = Date.now();
+    
+    // Circles drawn by players
+    this.circles = {};
+    this.circleIdCounter = 1;
+    this.playerCircles = {}; // Map player IDs to their active circle
   }
 
   /**
@@ -215,6 +220,99 @@ class Game {
         console.error('Error in collectCoin handler:', error);
       }
     });
+    
+    // Handle circle creation
+    socket.on('createCircle', (circleData) => {
+      try {
+        // Create a new circle with server-assigned ID
+        const circleId = this.createCircle(socket.id, circleData.x, circleData.y, circleData.radius);
+        
+        // Broadcast to all players
+        if (circleId) {
+          const circle = this.circles[circleId];
+          this.io.emit('circleCreated', circle);
+          
+          // Set expiration time (5 seconds)
+          setTimeout(() => {
+            this.removeCircle(circleId);
+          }, 5000);
+        }
+      } catch (error) {
+        console.error('Error creating circle:', error);
+      }
+    });
+    
+    // Handle circle removal
+    socket.on('removeCircle', (data) => {
+      try {
+        // Validate the requester owns the circle
+        const circleId = data.circleId;
+        const circle = this.circles[circleId];
+        
+        if (circle && circle.playerId === socket.id) {
+          this.removeCircle(circleId);
+        }
+      } catch (error) {
+        console.error('Error removing circle:', error);
+      }
+    });
+  }
+  
+  /**
+   * Create a new circle and assign it to a player
+   * @param {string} playerId - ID of the player creating the circle
+   * @param {number} x - X position of the circle
+   * @param {number} y - Y position of the circle
+   * @param {number} radius - Radius of the circle
+   * @returns {string} ID of the created circle
+   */
+  createCircle(playerId, x, y, radius) {
+    // If player already has a circle, remove it first
+    if (this.playerCircles[playerId]) {
+      this.removeCircle(this.playerCircles[playerId]);
+    }
+    
+    // Create a unique ID for the circle
+    const circleId = `circle_${this.circleIdCounter++}`;
+    
+    // Create the circle object
+    const circle = {
+      id: circleId,
+      playerId: playerId,
+      x: x,
+      y: y,
+      radius: radius || 100,
+      createdAt: Date.now()
+    };
+    
+    // Store the circle
+    this.circles[circleId] = circle;
+    this.playerCircles[playerId] = circleId;
+    
+    return circleId;
+  }
+  
+  /**
+   * Remove a circle by ID
+   * @param {string} circleId - ID of the circle to remove
+   */
+  removeCircle(circleId) {
+    const circle = this.circles[circleId];
+    if (circle) {
+      // Remove player's reference to this circle
+      if (this.playerCircles[circle.playerId] === circleId) {
+        delete this.playerCircles[circle.playerId];
+      }
+      
+      // Remove the circle
+      delete this.circles[circleId];
+      
+      // Notify all clients
+      this.io.emit('circleRemoved', circleId);
+      
+      return true;
+    }
+    return false;
   }
 
   /**

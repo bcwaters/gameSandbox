@@ -69,7 +69,9 @@ class SocketManager {
             currentCoins: [],
             coinSpawned: [],
             coinCollected: [],
-            coinRemoved: []
+            coinRemoved: [],
+            circleCreated: [],
+            circleRemoved: []
         };
         
         this.playerId = null;
@@ -224,6 +226,15 @@ class SocketManager {
         this.socket.on('playerScoreUpdate', (scoreInfo) => {
             this.callbacks.playerScoreUpdate.forEach(callback => callback(scoreInfo));
         });
+        
+        // Circle events
+        this.socket.on('circleCreated', (circleData) => {
+            this.callbacks.circleCreated.forEach(callback => callback(circleData));
+        });
+        
+        this.socket.on('circleRemoved', (circleId) => {
+            this.callbacks.circleRemoved.forEach(callback => callback(circleId));
+        });
     }
     
     /**
@@ -367,6 +378,25 @@ class SocketManager {
     collectCoin(coinId) {
         this.socket.emit('collectCoin', {
             coinId: coinId,
+            playerId: this.playerId
+        });
+    }
+    
+    /**
+     * Send circle creation to server
+     * @param {Object} circleData - Data for the circle
+     */
+    createCircle(circleData) {
+        this.socket.emit('createCircle', circleData);
+    }
+    
+    /**
+     * Send circle removal to server
+     * @param {string} circleId - ID of the circle to remove
+     */
+    removeCircle(circleId) {
+        this.socket.emit('removeCircle', {
+            circleId: circleId,
             playerId: this.playerId
         });
     }

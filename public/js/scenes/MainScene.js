@@ -18,6 +18,8 @@ class MainScene extends Phaser.Scene {
         this.swordCooldown = 1000;
         this.playersHitBySword = {};
         this.obstaclesHitBySword = {};
+        this.playerCircle = null; // Store the player's active circle
+        this.otherPlayerCircles = {}; // Store circles from other players
         
         console.log('MainScene constructor completed');
     }
@@ -259,6 +261,22 @@ class MainScene extends Phaser.Scene {
                 this.player.setAmmo(this.player.ammo - 1);
                 this.ui.updateAmmoCounter(this.player.ammo);
             }
+        });
+        
+        // Setup click handler for drawing circles
+        this.input.on('pointerdown', (pointer) => {
+            // Skip if text input is focused
+            if (this.ui.isInputActive()) return;
+            
+            // Skip if player is defeated
+            if (this.isDefeated) return;
+            
+            // Get world position where player clicked
+            const worldX = pointer.worldX;
+            const worldY = pointer.worldY;
+            
+            // Draw a circle at the clicked position (send to server)
+            this.createPlayerCircle(worldX, worldY);
         });
         
         // Add mobile touch controls for small screens or mobile devices
@@ -1103,6 +1121,25 @@ class MainScene extends Phaser.Scene {
                 }
             }
         });
+        
+        // Circle events
+        this.socketManager.on('circleCreated', (circleData) => {
+            this.drawCircleFromServer(circleData);
+        });
+        
+        this.socketManager.on('circleRemoved', (circleId) => {
+            // Check if it's our circle
+            if (this.playerCircle && this.playerCircle.id === circleId) {
+                // Clear our reference but don't notify server (to avoid loop)
+                if (this.playerCircle.graphics) {
+                    this.playerCircle.graphics.destroy();
+                }
+                this.playerCircle = null;
+            } else {
+                // Remove from other players' circles
+                this.removeCircle(circleId);
+            }
+        });
     }
     
     setupCollisions() {
@@ -1762,6 +1799,216 @@ class MainScene extends Phaser.Scene {
      * @param {number} x - X coordinate
      * @param {number} y - Y coordinate
      */
+    /**
+     * Create a player circle at the specified position
+     * @param {number} x - X position
+     * @param {number} y - Y position
+     */
+    createPlayerCircle(x, y) {
+        // Only allow one circle per player at a time
+        if (this.playerCircle) {
+            // If player already has an active circle, remove it
+            this.removePlayerCircle();
+        }
+        
+        // Create circle data to send to server
+        const circleData = {
+            x: x,
+            y: y,
+            radius: 100, // Fixed radius of 100
+            playerId: this.socketManager.getPlayerId()
+        };
+        
+        // Send to server
+        this.socketManager.createCircle(circleData);
+    }
+    
+    /**
+     * Remove the player's circle
+     */
+    removePlayerCircle() {
+        if (this.playerCircle) {
+            // Remove update callback if exists
+            if (this.playerCircle.updateCallback) {
+                this.events.off('update', this.playerCircle.updateCallback);
+            }
+            
+            // Destroy all components
+            if (this.playerCircle.graphics) this.playerCircle.graphics.destroy();
+            if (this.playerCircle.fog) this.playerCircle.fog.destroy();
+            if (this.playerCircle.visibleArea) this.playerCircle.visibleArea.destroy();
+            
+            // Notify server (if implemented)
+            this.socketManager.removeCircle(this.playerCircle.id);
+            
+            // Clear reference
+            this.playerCircle = null;
+        }
+    }
+    
+    /**
+     * Draw a circle from server data
+     * @param {Object} circleData - Data about the circle
+     */
+    drawCircleFromServer(circleData) {
+        // If it's from this player, store reference
+        const isLocalPlayer = circleData.playerId === this.socketManager.getPlayerId();
+        
+        // Create graphics object for the circle outline
+        const graphics = this.add.graphics();
+        graphics.lineStyle(2, 0xffffff, 1.0); // Line width, color, alpha
+        graphics.strokeCircle(circleData.x, circleData.y, circleData.radius);
+        graphics.setDepth(200); // Draw above most elements including fog mask
+        
+        // Create a mask for the visible area
+        const visibleArea = this.add.graphics();
+        visibleArea.fillStyle(0xffffff); // White fill for the mask
+        visibleArea.fillCircle(circleData.x, circleData.y, circleData.radius); // Draw a filled circle as the mask
+        
+        // Create fog overlay covering the circle area
+        const gameWidth = this.cameras.main.width;
+        const gameHeight = this.cameras.main.height;
+        const fog = this.add.graphics();
+        fog.fillStyle(0x000000, 1.0); // Black with full opacity
+        fog.fillRect(0, 0, gameWidth, gameHeight);
+        fog.setDepth(100); // Below the circle outline but above game elements
+        
+        // Set the mask to show/hide appropriate parts
+        const mask = new Phaser.Display.Masks.GeometryMask(this, visibleArea);
+        fog.setMask(mask);
+        
+        // Create a circle object to track all components
+        const circleObject = {
+            id: circleData.id,
+            x: circleData.x,
+            y: circleData.y,
+            radius: circleData.radius,
+            playerId: circleData.playerId,
+            graphics: graphics,
+            fog: fog,
+            visibleArea: visibleArea,
+            mask: mask,
+            insideCircle: false // Track if player is inside
+        };
+        
+        // Store reference
+        if (isLocalPlayer) {
+            this.playerCircle = circleObject;
+        } else {
+            this.otherPlayerCircles[circleData.id] = circleObject;
+        }
+        
+        // Update fog mask visibility based on player position immediately
+        this.updateCircleVisibility(circleObject);
+        
+        // Set up continuous visibility check
+        const updateVisibility = () => {
+            this.updateCircleVisibility(circleObject);
+        };
+        
+        // Add update callback for this circle
+        this.events.on('update', updateVisibility);
+        circleObject.updateCallback = updateVisibility;
+        
+        // Auto-remove after 5 seconds
+        this.time.delayedCall(5000, () => {
+            if (isLocalPlayer) {
+                if (this.playerCircle && this.playerCircle.id === circleData.id) {
+                    // Remove update callback first
+                    if (this.playerCircle.updateCallback) {
+                        this.events.off('update', this.playerCircle.updateCallback);
+                    }
+                    this.removePlayerCircle();
+                }
+            } else {
+                if (this.otherPlayerCircles[circleData.id]) {
+                    // Remove update callback first
+                    if (this.otherPlayerCircles[circleData.id].updateCallback) {
+                        this.events.off('update', this.otherPlayerCircles[circleData.id].updateCallback);
+                    }
+                    this.removeCircle(circleData.id);
+                }
+            }
+        });
+    }
+    
+    /**
+     * Update a circle's fog visibility based on player position
+     * @param {Object} circle - The circle to update
+     */
+    updateCircleVisibility(circle) {
+        if (!circle || !this.player || !circle.fog) return;
+        
+        // Calculate distance between player and circle center
+        const dist = Phaser.Math.Distance.Between(
+            this.player.sprite.x, 
+            this.player.sprite.y, 
+            circle.x, 
+            circle.y
+        );
+        
+        // Check if player is inside the circle
+        const isInside = dist <= circle.radius;
+        
+        // Only update if the state has changed to avoid unnecessary updates
+        if (circle.insideCircle !== isInside) {
+            circle.insideCircle = isInside;
+            
+            if (isInside) {
+                // Player is INSIDE the circle:
+                // - Make the inside of the circle completely transparent (0 opacity)
+                // - Keep outside of circle black
+                circle.fog.clear();
+                circle.fog.fillStyle(0x000000, 1.0);
+                
+                // Draw a filled rect covering the whole screen
+                const gameWidth = this.cameras.main.width;
+                const gameHeight = this.cameras.main.height;
+                circle.fog.fillRect(0, 0, gameWidth, gameHeight);
+                
+                // Cut out the circle area by setting the mask to invert
+                circle.fog.mask.invertAlpha = true;
+            } else {
+                // Player is OUTSIDE the circle:
+                // - Inside of circle should be black (hidden)
+                // - Outside of circle is transparent
+                circle.fog.clear();
+                circle.fog.fillStyle(0x000000, 1.0);
+                
+                // Draw a filled rect covering the whole screen
+                const gameWidth = this.cameras.main.width;
+                const gameHeight = this.cameras.main.height;
+                circle.fog.fillRect(0, 0, gameWidth, gameHeight);
+                
+                // Set the mask to not invert (black inside circle)
+                circle.fog.mask.invertAlpha = false;
+            }
+        }
+    }
+    
+    /**
+     * Remove a circle by ID
+     * @param {string} circleId - ID of the circle to remove
+     */
+    removeCircle(circleId) {
+        if (this.otherPlayerCircles[circleId]) {
+            const circle = this.otherPlayerCircles[circleId];
+            
+            // Remove update callback if exists
+            if (circle.updateCallback) {
+                this.events.off('update', circle.updateCallback);
+            }
+            
+            // Destroy all components
+            if (circle.graphics) circle.graphics.destroy();
+            if (circle.fog) circle.fog.destroy();
+            if (circle.visibleArea) circle.visibleArea.destroy();
+            
+            // Remove reference
+            delete this.otherPlayerCircles[circleId];
+        }
+    }
+    
     createRespawnEffect(x, y) {
         // Create a respawn circle that expands outward
         const respawnCircle = this.add.circle(x, y, 0, 0x00ffff, 0.6);
