@@ -15,7 +15,7 @@ const GameConfig = {
   // Weapon settings
   PROJECTILE_SPEED: 400,
   PROJECTILE_DAMAGE: 1,
-  SWORD_DAMAGE: 4,
+  SWORD_DAMAGE: 3,
   SWORD_COOLDOWN: 1000,
   
   // World settings

@@ -17,7 +17,7 @@ class SimpleSword {
         this.active = true;
         
         // Calculate sword length and position based on direction
-        const swordLength = 40; // Length of the sword
+        const swordLength = 20; // Length of the sword
         
         // Calculate the offset for the sword end point
         if (direction === 'up') {
