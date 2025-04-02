@@ -15,7 +15,7 @@ class MainScene extends Phaser.Scene {
         this.lastDirection = 'down';
         this.isDefeated = false;
         this.lastSwordTime = 0;
-        this.swordCooldown = 1000;
+        this.swordCooldown = 300;
         this.playersHitBySword = {};
         this.obstaclesHitBySword = {};
         this.playerCircle = null; // Store the player's active circle
@@ -241,7 +241,7 @@ class MainScene extends Phaser.Scene {
         });
         
         // Add sword key
-        this.swordKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
+        this.swordKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
         this.swordKey.on('down', () => {
             // Skip if text input is focused
             if (this.ui.isInputActive()) return;
@@ -281,6 +281,14 @@ class MainScene extends Phaser.Scene {
         
         // Add mobile touch controls for small screens or mobile devices
         this.setupMobileControls();
+        
+        // Add WASD movement
+        this.wasdKeys = {
+            up: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+            down: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+            left: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+            right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D)
+        };
     }
     
     setupMobileControls() {
@@ -405,7 +413,7 @@ class MainScene extends Phaser.Scene {
                 this.useSword();
                 
                 // Add cooldown
-                this.time.delayedCall(300, () => {
+                this.time.delayedCall(100, () => {
                     this.canPressSword = true;
                     // If button is still being held, use sword again
                     if (this.buttonStates.sword) {
@@ -601,15 +609,24 @@ class MainScene extends Phaser.Scene {
         });
         
         // When current obstacles data is received
-        this.socketManager.on('currentObstacles', (obstacles) => {
-            // Clear any existing obstacles
+        this.socketManager.on('currentObstacles', (data) => {
+            // Clear any existing obstacles and outlines
             Object.values(this.obstacles).forEach(obstacle => obstacle.destroy());
             this.obstacles = {};
             
-            // Create all obstacles
-            obstacles.forEach(obstacleInfo => {
-                this.createObstacle(obstacleInfo);
-            });
+            // Create active obstacles
+            if (data.obstacles) {
+                data.obstacles.forEach(obstacleInfo => {
+                    this.createObstacle(obstacleInfo);
+                });
+            }
+            
+            // Create outlines for destroyed obstacles
+            if (data.outlines) {
+                data.outlines.forEach(outlineInfo => {
+                    this.createObstacleOutline(outlineInfo);
+                });
+            }
         });
         
         // When an obstacle is hit
@@ -641,6 +658,18 @@ class MainScene extends Phaser.Scene {
                     if (this.hitSound) {
                         this.hitSound.play({ volume: 0.8 });
                     }
+                }
+                
+                // Create outline if requested (when destroyed by a player)
+                if (destroyInfo.createOutline) {
+                    this.createObstacleOutline({
+                        id: destroyInfo.outlineId,
+                        x: destroyInfo.x,
+                        y: destroyInfo.y,
+                        size: destroyInfo.size,
+                        isOutline: true,
+                        respawnIn: destroyInfo.respawnIn // Pass the respawn time to show countdown
+                    });
                 }
             }
         });
@@ -699,6 +728,103 @@ class MainScene extends Phaser.Scene {
                 ease: 'Power2',
                 onComplete: () => notification.destroy()
             });
+        });
+        
+        // When an obstacle respawns
+        this.socketManager.on('obstacleRespawned', (obstacleInfo) => {
+            // Use specific method for respawning to ensure exact position
+            this.createRespawnedObstacle(obstacleInfo);
+            
+            // Add a visual respawn effect - green energy ring
+            const respawnEffect = this.add.circle(
+                obstacleInfo.x,
+                obstacleInfo.y,
+                obstacleInfo.size * 1.5,
+                0x00ff00, // Green for respawn
+                0.7
+            );
+            
+            // Animate the respawn effect
+            this.tweens.add({
+                targets: respawnEffect,
+                alpha: 0,
+                scale: 1.5,
+                duration: 1000,
+                onComplete: () => respawnEffect.destroy()
+            });
+            
+            // Create multiple particles converging toward the center
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2;
+                const distance = obstacleInfo.size * 3;
+                const particle = this.add.circle(
+                    obstacleInfo.x + Math.cos(angle) * distance,
+                    obstacleInfo.y + Math.sin(angle) * distance,
+                    4,
+                    0x00ff00, // Green
+                    1
+                );
+                
+                // Particles converge toward the center
+                this.tweens.add({
+                    targets: particle,
+                    x: obstacleInfo.x,
+                    y: obstacleInfo.y,
+                    alpha: 0,
+                    duration: 800,
+                    ease: 'Cubic.in',
+                    onComplete: () => particle.destroy()
+                });
+            }
+            
+            // Add a text effect showing "RESPAWNED"
+            const respawnText = this.add.text(
+                obstacleInfo.x,
+                obstacleInfo.y - 30,
+                "RESPAWNED",
+                {
+                    fontSize: '14px',
+                    fontStyle: 'bold',
+                    fill: '#00ff00',
+                    stroke: '#000000',
+                    strokeThickness: 3
+                }
+            );
+            respawnText.setOrigin(0.5);
+            respawnText.setDepth(100);
+            
+            // Animate text
+            this.tweens.add({
+                targets: respawnText,
+                y: respawnText.y - 20,
+                alpha: 0,
+                duration: 1500,
+                onComplete: () => respawnText.destroy()
+            });
+        });
+        
+        // When an outline is removed (due to obstacle respawn)
+        this.socketManager.on('outlineRemoved', (outlineId) => {
+            // Remove the outline if it exists
+            if (this.obstacles[outlineId]) {
+                // Store position before destroying for any effects
+                const x = this.obstacles[outlineId].x;
+                const y = this.obstacles[outlineId].y;
+                
+                // Destroy the outline
+                this.obstacles[outlineId].destroy();
+                delete this.obstacles[outlineId];
+                
+                // Add a subtle effect to show the outline disappearing
+                const outlineFadeEffect = this.add.circle(x, y, 15, 0xffffff, 0.5);
+                this.tweens.add({
+                    targets: outlineFadeEffect,
+                    alpha: 0,
+                    scale: 0.5,
+                    duration: 300,
+                    onComplete: () => outlineFadeEffect.destroy()
+                });
+            }
         });
         
         // Coin-related events
@@ -990,7 +1116,26 @@ class MainScene extends Phaser.Scene {
                     }
                 });
                 
-                // Remove obstacles that are no longer in the game state
+                // Update outlines if provided
+                if (gameState.outlines && Array.isArray(gameState.outlines)) {
+                    gameState.outlines.forEach(serverOutline => {
+                        currentObstacleIds.add(serverOutline.id);
+                        
+                        // Check if we already have this outline
+                        if (this.obstacles[serverOutline.id]) {
+                            // Update existing outline
+                            this.obstacles[serverOutline.id].updateFromServer(
+                                serverOutline.x,
+                                serverOutline.y
+                            );
+                        } else {
+                            // Create a new outline if we don't have it yet
+                            this.createObstacleOutline(serverOutline);
+                        }
+                    });
+                }
+                
+                // Remove obstacles and outlines that are no longer in the game state
                 Object.keys(this.obstacles).forEach(id => {
                     if (!currentObstacleIds.has(id)) {
                         if (this.obstacles[id]) {
@@ -1353,12 +1498,75 @@ class MainScene extends Phaser.Scene {
             obstacleInfo.y,
             obstacleInfo.size,
             obstacleInfo.id,
-            obstacleInfo.health
+            obstacleInfo.health,
+            false // Not an outline
         );
         
         // Add to tracking objects
         this.obstacles[obstacleInfo.id] = obstacle;
         this.obstaclesGroup.add(obstacle.sprite);
+    }
+    
+    /**
+     * Create an outline of a destroyed obstacle
+     * @param {Object} outlineInfo - The outline data from server
+     */
+    createObstacleOutline(outlineInfo) {
+        // Create outline instance (using same Obstacle class with isOutline=true)
+        const outline = new Obstacle(
+            this,
+            outlineInfo.x,
+            outlineInfo.y,
+            outlineInfo.size,
+            outlineInfo.id,
+            0, // No health
+            true, // This is an outline
+            outlineInfo.respawnIn || 0 // Pass respawn time if available
+        );
+        
+        // Add to tracking objects
+        this.obstacles[outlineInfo.id] = outline;
+    }
+    
+    /**
+     * Create a respawned obstacle at its original exact position
+     * @param {Object} obstacleInfo - The obstacle data from server
+     */
+    createRespawnedObstacle(obstacleInfo) {
+        // Explicitly create obstacle at the exact coordinates specified
+        // Create obstacle instance with precise position control
+        const obstacle = new Obstacle(
+            this,
+            obstacleInfo.x,
+            obstacleInfo.y,
+            obstacleInfo.size,
+            obstacleInfo.id,
+            obstacleInfo.health || 2,
+            false // Not an outline
+        );
+        
+        // Force position to be exact
+        if (obstacle.sprite) {
+            obstacle.sprite.x = obstacleInfo.x;
+            obstacle.sprite.y = obstacleInfo.y;
+            
+            // Ensure physics body is positioned correctly
+            if (obstacle.sprite.body) {
+                obstacle.sprite.body.reset(obstacleInfo.x, obstacleInfo.y);
+            }
+        }
+        
+        // Store original position for reference
+        obstacle.originalX = obstacleInfo.x;
+        obstacle.originalY = obstacleInfo.y;
+        
+        // Add to tracking objects
+        this.obstacles[obstacleInfo.id] = obstacle;
+        this.obstaclesGroup.add(obstacle.sprite);
+        
+        console.log(`Respawned obstacle at exact position: (${obstacleInfo.x}, ${obstacleInfo.y})`);
+        
+        return obstacle;
     }
     
     /**
@@ -1862,7 +2070,7 @@ class MainScene extends Phaser.Scene {
         
         // Create a mask for the visible area
         const visibleArea = this.add.graphics();
-        visibleArea.fillStyle(0xffffff); // White fill for the mask
+        visibleArea.fillStyle(0xffffff, 0.1); // White fill for the mask
         visibleArea.fillCircle(circleData.x, circleData.y, circleData.radius); // Draw a filled circle as the mask
         
         // Create fog overlay covering the circle area
@@ -2131,10 +2339,10 @@ class MainScene extends Phaser.Scene {
         
         // Create input object based on cursor keys and mobile joystick
         const inputs = {
-            left: this.cursors.left.isDown,
-            right: this.cursors.right.isDown,
-            up: this.cursors.up.isDown,
-            down: this.cursors.down.isDown
+            left: this.cursors.left.isDown || this.wasdKeys.left.isDown,
+            right: this.cursors.right.isDown || this.wasdKeys.right.isDown,
+            up: this.cursors.up.isDown || this.wasdKeys.up.isDown,
+            down: this.cursors.down.isDown || this.wasdKeys.down.isDown
         };
         
         // Add mobile joystick input if active

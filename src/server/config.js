@@ -34,10 +34,11 @@ const GameConfig = {
   
   // Obstacle settings
   OBSTACLE_COUNT: 10,           // Initial number of obstacles to place
-  MAX_OBSTACLES: 20,            // Maximum number of obstacles allowed
+  MAX_OBSTACLES: 30,            // Maximum number of obstacles allowed
   OBSTACLE_SIZE: 30,            // Size of obstacles in pixels
   OBSTACLE_MAX_HEALTH: 2,       // Number of sword hits to destroy
   OBSTACLE_MIN_DISTANCE: 100,   // Minimum distance between obstacles and respawn points
+  OBSTACLE_RESPAWN_TIME: 20000, // Time in ms before a destroyed obstacle respawns (20 seconds)
   
   // Coin settings
   COIN_SIZE: 15,                // Size of coins in pixels

@@ -51,7 +51,14 @@ class Game {
     
     // Send current game state to the new player
     socket.emit('currentPlayers', this.playerManager.getAllPlayers());
-    socket.emit('currentObstacles', this.obstacleManager.getSerializedObstacles());
+    
+    // Send obstacles and outlines separately
+    const serializedObstacles = this.obstacleManager.getSerializedObstacles();
+    socket.emit('currentObstacles', {
+      obstacles: serializedObstacles.obstacles,
+      outlines: serializedObstacles.outlines
+    });
+    
     socket.emit('currentCoins', this.coinManager.getSerializedCoins()); // Re-enabled coins
     
     // Inform other players of the new player
@@ -367,11 +374,15 @@ class Game {
       this.obstacleManager // Pass obstacle manager for collision detection
     );
     
+    // Prepare serialized obstacles and outlines
+    const serializedObstacles = this.obstacleManager.getSerializedObstacles();
+    
     // Send game state to all clients
     const gameState = {
       players: this.playerManager.getSerializedPlayers(),
       projectiles: this.projectileManager.getSerializedProjectiles(),
-      obstacles: this.obstacleManager.getSerializedObstacles()
+      obstacles: serializedObstacles.obstacles,
+      outlines: serializedObstacles.outlines
     };
     
     // Re-enabled coins
