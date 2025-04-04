@@ -2148,16 +2148,26 @@ class MainScene extends Phaser.Scene {
         // If it's from this player, store reference
         const isLocalPlayer = circleData.playerId === this.socketManager.getPlayerId();
         
+        // Convert world position to screen position
+        const camera = this.cameras.main;
+        // Use the click position, not the player position
+        const screenX = circleData.x - camera.scrollX;
+        const screenY = circleData.y - camera.scrollY;
+        
         // Create graphics object for the circle outline
         const graphics = this.add.graphics();
         graphics.lineStyle(2, 0xffffff, 1.0); // Line width, color, alpha
-        graphics.strokeCircle(circleData.x, circleData.y, circleData.radius);
+        graphics.strokeCircle(screenX, screenY, circleData.radius);
         graphics.setDepth(200); // Draw above most elements including fog mask
+        graphics.setScrollFactor(0); // Fix to camera
         
-        // Create a mask for the visible area
+        // Create a mask for the visible area - will be positioned in screen coordinates
         const visibleArea = this.add.graphics();
         visibleArea.fillStyle(0xffffff, 0.1); // White fill for the mask
-        visibleArea.fillCircle(circleData.x, circleData.y, circleData.radius); // Draw a filled circle as the mask
+        visibleArea.setScrollFactor(0); // Fix to camera
+        
+        // Draw the circle in screen coordinates
+        visibleArea.fillCircle(circleData.x, circleData.y, circleData.radius);
         
         // Create fog overlay covering the camera viewport 
         // (will be updated to follow the camera)
@@ -2167,6 +2177,7 @@ class MainScene extends Phaser.Scene {
         fog.fillStyle(0x000000, 1.0); // Black with full opacity
         fog.fillRect(0, 0, worldWidth, worldHeight);
         fog.setDepth(100); // Below the circle outline but above game elements
+        fog.setScrollFactor(0); // Make the fog stay fixed to the camera
         
         // Set the mask to show/hide appropriate parts
         const mask = new Phaser.Display.Masks.GeometryMask(this, visibleArea);
@@ -2198,14 +2209,36 @@ class MainScene extends Phaser.Scene {
         // Update fog mask visibility based on player position immediately
         this.updateCircleVisibility(circleObject);
         
-        // Set up continuous visibility check and camera tracking
-        const updateVisibility = () => {
+        // Set up continuous visibility check, camera tracking, and circle position updates
+        const updateVisibilityAndPosition = () => {
+            // Update the circle position based on the camera movement
+            if (graphics && visibleArea) {
+                // Get current camera position
+                const camera = this.cameras.main;
+                if (camera) {
+                    // Update outline position
+                    graphics.clear();
+                    graphics.lineStyle(2, 0xffffff, 1.0);
+                    
+                    // Convert the fixed circle world position to screen space
+                    // Use the original click position from circleData, not the player position
+                    const screenX = circleData.x - camera.scrollX;
+                    const screenY = circleData.y - camera.scrollY;
+                    
+                    // Draw at screen coordinates
+                    graphics.strokeCircle(screenX, screenY, circleData.radius);
+                    
+                    // Do NOT update circleObject.x/y - it should stay at the original click position
+                }
+            }
+            
+            // Then update visibility
             this.updateCircleVisibility(circleObject);
         };
         
         // Add update callback for this circle
-        this.events.on('update', updateVisibility);
-        circleObject.updateCallback = updateVisibility;
+        this.events.on('update', updateVisibilityAndPosition);
+        circleObject.updateCallback = updateVisibilityAndPosition;
         
         // Auto-remove after 5 seconds
         this.time.delayedCall(5000, () => {
@@ -2234,7 +2267,18 @@ class MainScene extends Phaser.Scene {
      * @param {Object} circle - The circle to update
      */
     updateCircleVisibility(circle) {
-        if (!circle || !this.player || !circle.fog) return;
+        if (!circle || !this.player || !circle.fog || !this.cameras || !this.cameras.main) return;
+        
+        const camera = this.cameras.main;
+        
+        // Track camera position to update fog position if camera moved
+        const cameraX = camera.scrollX;
+        const cameraY = camera.scrollY;
+        const cameraWidth = camera.width;
+        const cameraHeight = camera.height;
+        
+        // Check if camera has moved
+        const cameraChanged = (circle.lastCameraX !== cameraX || circle.lastCameraY !== cameraY);
         
         // Calculate distance between player and circle center
         const dist = Phaser.Math.Distance.Between(
@@ -2247,39 +2291,42 @@ class MainScene extends Phaser.Scene {
         // Check if player is inside the circle
         const isInside = dist <= circle.radius;
         
-        // Only update if the state has changed to avoid unnecessary updates
-        if (circle.insideCircle !== isInside) {
+        // We need to update if either:
+        // 1. The circle visibility state has changed (player went in/out of the circle)
+        // 2. The camera position has changed (user is exploring the map)
+        if (circle.insideCircle !== isInside || cameraChanged) {
+            // Save camera position for next comparison
+            circle.lastCameraX = cameraX;
+            circle.lastCameraY = cameraY;
+            
+            // Update the fog to match the current viewport and offset for camera position
+            circle.fog.clear();
+            
+            // Update mask position based on camera movement
+            circle.visibleArea.clear();
+            circle.visibleArea.fillStyle(0xffffff, 0.1);
+            
+            // Convert original click position from world to screen coordinates
+            const screenX = circle.x - camera.scrollX;
+            const screenY = circle.y - camera.scrollY;
+            
+            // Draw the circle in screen coordinates to match the camera
+            circle.visibleArea.fillCircle(screenX, screenY, circle.radius);
+            
+            // Set inside/outside visibility state
             circle.insideCircle = isInside;
             
-            if (isInside) {
-                // Player is INSIDE the circle:
-                // - Make the inside of the circle completely transparent (0 opacity)
-                // - Keep outside of circle black
-                circle.fog.clear();
-                circle.fog.fillStyle(0x000000, 1.0);
-                
-                // Draw a filled rect covering the whole screen
-                const gameWidth = this.cameras.main.width;
-                const gameHeight = this.cameras.main.height;
-                circle.fog.fillRect(0, 0, gameWidth, gameHeight);
-                
-                // Cut out the circle area by setting the mask to invert
-                circle.fog.mask.invertAlpha = true;
-            } else {
-                // Player is OUTSIDE the circle:
-                // - Inside of circle should be black (hidden)
-                // - Outside of circle is transparent
-                circle.fog.clear();
-                circle.fog.fillStyle(0x000000, 1.0);
-                
-                // Draw a filled rect covering the whole screen
-                const gameWidth = this.cameras.main.width;
-                const gameHeight = this.cameras.main.height;
-                circle.fog.fillRect(0, 0, gameWidth, gameHeight);
-                
-                // Set the mask to not invert (black inside circle)
-                circle.fog.mask.invertAlpha = false;
-            }
+            // Update fog rendering based on visibility state
+            circle.fog.fillStyle(0x000000, 1.0);
+            
+            // Draw a filled rect covering the entire viewport plus a buffer
+            // (Make the fog slightly larger than needed to avoid seeing edges during movement)
+            const worldWidth = 1600;
+            const worldHeight = 1600;
+            circle.fog.fillRect(0, 0, worldWidth, worldHeight);
+            
+            // Set mask behavior based on whether player is inside or outside the circle
+            circle.fog.mask.invertAlpha = isInside;
         }
     }
     
