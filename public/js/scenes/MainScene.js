@@ -47,6 +47,12 @@ class MainScene extends Phaser.Scene {
     create() {
         console.log('MainScene create function started');
         try {
+            // Hide default cursor
+            this.input.setDefaultCursor('none');
+            
+            // Create a custom crosshair
+            this.createCustomCrosshair();
+            
             // Initialize networking
             console.log('Creating SocketManager instance');
             this.socketManager = new SocketManager();
@@ -1409,13 +1415,25 @@ class MainScene extends Phaser.Scene {
                 // Create sword for other player
                 const otherPlayer = this.otherPlayers[swordData.playerId];
                 if (otherPlayer) {
-                    // Create a simple sword for the other player
-                    new SimpleSword(
-                        this,
-                        otherPlayer.sprite,
-                        swordData.direction,
-                        swordData.playerId
-                    );
+                    // Check if cursor targeting was used
+                    if (swordData.useTargetPosition && swordData.targetX !== null && swordData.targetY !== null) {
+                        // Create a simple sword for the other player with target position
+                        new SimpleSword(
+                            this,
+                            otherPlayer.sprite,
+                            swordData.direction, // Legacy direction as fallback
+                            swordData.playerId,
+                            { x: swordData.targetX, y: swordData.targetY } // Target position
+                        );
+                    } else {
+                        // Fallback to legacy direction-based sword
+                        new SimpleSword(
+                            this,
+                            otherPlayer.sprite,
+                            swordData.direction,
+                            swordData.playerId
+                        );
+                    }
                 }
             }
         });
@@ -1876,9 +1894,94 @@ class MainScene extends Phaser.Scene {
             
             // Send to server with both direction and target position
             this.socketManager.fireProjectile(this.lastDirection, targetPosition);
+            
+            // Provide visual feedback on the crosshair
+            this.pulseCustomCrosshair();
         } else {
             // Fallback to direction-based firing if cursor position not available
             this.socketManager.fireProjectile(this.lastDirection);
+        }
+    }
+    
+    /**
+     * Creates a pulsing animation on the crosshair when firing
+     */
+    pulseCustomCrosshair() {
+        if (this.crosshair) {
+            // Stop any existing tween to prevent conflicts
+            this.tweens.killTweensOf(this.crosshair.scale);
+            
+            // Reset scale to ensure consistent animation
+            this.crosshair.setScale(1);
+            
+            // Create a quick pulse animation
+            this.tweens.add({
+                targets: this.crosshair,
+                scale: 1.5,
+                duration: 100,
+                yoyo: true,
+                ease: 'Power2',
+                onComplete: () => {
+                    // Reset scale when animation completes
+                    this.crosshair.setScale(1);
+                }
+            });
+        }
+    }
+    
+    /**
+     * Creates a sword slash effect on the crosshair
+     */
+    swordCrosshairEffect() {
+        if (this.crosshair) {
+            // Stop any existing tween to prevent conflicts
+            this.tweens.killTweensOf(this.crosshair);
+            
+            // Change crosshair color temporarily
+            const existingGraphics = this.crosshair.getAt(0);
+            if (existingGraphics) {
+                // Store original position
+                const x = this.crosshair.x;
+                const y = this.crosshair.y;
+                
+                // Create sword slash effect
+                const slashEffect = this.add.graphics();
+                slashEffect.lineStyle(3, 0x00FF00, 1);
+                
+                // Draw slash diagonally
+                slashEffect.beginPath();
+                slashEffect.moveTo(x - 20, y - 20);
+                slashEffect.lineTo(x + 20, y + 20);
+                slashEffect.strokePath();
+                
+                // Draw second slash
+                slashEffect.beginPath();
+                slashEffect.moveTo(x + 20, y - 20);
+                slashEffect.lineTo(x - 20, y + 20);
+                slashEffect.strokePath();
+                
+                // Make the crosshair rotate quickly
+                this.tweens.add({
+                    targets: this.crosshair,
+                    angle: 360,
+                    duration: 300,
+                    ease: 'Power2',
+                    onComplete: () => {
+                        // Reset rotation when complete
+                        this.crosshair.angle = 0;
+                    }
+                });
+                
+                // Fade out and remove the slash effect
+                this.tweens.add({
+                    targets: slashEffect,
+                    alpha: 0,
+                    duration: 200,
+                    onComplete: () => {
+                        slashEffect.destroy();
+                    }
+                });
+            }
         }
     }
     
@@ -1998,16 +2101,32 @@ class MainScene extends Phaser.Scene {
             this.swordSound.play({ volume: 0.6 });
         }
         
+        // Show sword animation on crosshair
+        this.swordCrosshairEffect();
+        
         // Reset the hit tracking for this new sword swing
         this.playersHitBySword = {};
         this.obstaclesHitBySword = {};
+        
+        // Get cursor position to determine sword direction
+        const mousePointer = this.input.activePointer;
+        let targetPosition = null;
+        
+        if (mousePointer) {
+            // Create target position object with cursor coordinates
+            targetPosition = {
+                x: mousePointer.worldX,
+                y: mousePointer.worldY
+            };
+        }
         
         // Create a simple sword using our new class
         const sword = new SimpleSword(
             this,
             this.player.sprite,
-            this.lastDirection,
-            this.socketManager.getPlayerId()
+            this.lastDirection, // Keep this for backward compatibility
+            this.socketManager.getPlayerId(),
+            targetPosition // Pass the cursor position
         );
         
         // Get the hitbox for collision detection
@@ -2067,7 +2186,8 @@ class MainScene extends Phaser.Scene {
             swordHitbox.x, 
             swordHitbox.y, 
             0, // Rotation doesn't matter for simple sword
-            this.lastDirection
+            this.lastDirection,
+            targetPosition // Pass the cursor position
         );
     }
     
@@ -2199,8 +2319,50 @@ class MainScene extends Phaser.Scene {
             playerId: this.socketManager.getPlayerId()
         };
         
+        // Show circle creation effect on crosshair
+        this.circleCrosshairEffect();
+        
         // Send to server
         this.socketManager.createCircle(circleData);
+    }
+    
+    /**
+     * Creates a circle effect on the crosshair
+     */
+    circleCrosshairEffect() {
+        if (this.crosshair) {
+            // Stop any existing tween to prevent conflicts
+            this.tweens.killTweensOf(this.crosshair);
+            
+            // Store original position
+            const x = this.crosshair.x;
+            const y = this.crosshair.y;
+            
+            // Create expanding circle effect
+            const circleEffect = this.add.circle(x, y, 5, 0x00AAFF, 0.5);
+            circleEffect.setDepth(999); // Just below the crosshair
+            
+            // Animate the circle expanding
+            this.tweens.add({
+                targets: circleEffect,
+                radius: 30,
+                alpha: 0,
+                duration: 400,
+                onComplete: () => {
+                    circleEffect.destroy();
+                }
+            });
+            
+            // Make crosshair pulse with blue color
+            this.tweens.add({
+                targets: this.crosshair,
+                scale: 1.3,
+                duration: 200,
+                yoyo: true,
+                repeat: 1,
+                ease: 'Sine.easeInOut'
+            });
+        }
     }
     
     /**
@@ -2478,6 +2640,51 @@ class MainScene extends Phaser.Scene {
             y >= cameraTop && 
             y <= cameraBottom
         );
+    }
+    
+    /**
+     * Creates a custom crosshair cursor that follows the mouse
+     */
+    createCustomCrosshair() {
+        // Create a container for the crosshair elements
+        this.crosshair = this.add.container(0, 0);
+        this.crosshair.setDepth(1000); // Very high depth to ensure it's on top
+        
+        // Create the crosshair shape using graphics
+        const crosshairGraphics = this.add.graphics();
+        
+        // Draw outer circle
+        crosshairGraphics.lineStyle(2, 0xFFFFFF, 1);
+        crosshairGraphics.strokeCircle(0, 0, 10);
+        
+        // Draw center dot
+        crosshairGraphics.fillStyle(0xFF0000, 1);
+        crosshairGraphics.fillCircle(0, 0, 2);
+        
+        // Draw horizontal and vertical lines
+        crosshairGraphics.lineStyle(1, 0xFFFFFF, 1);
+        // Left line
+        crosshairGraphics.lineBetween(-18, 0, -5, 0);
+        // Right line
+        crosshairGraphics.lineBetween(5, 0, 18, 0);
+        // Top line
+        crosshairGraphics.lineBetween(0, -18, 0, -5);
+        // Bottom line
+        crosshairGraphics.lineBetween(0, 5, 0, 18);
+        
+        // Add the graphics to the container
+        this.crosshair.add(crosshairGraphics);
+        
+        // Set crosshair to not scroll with camera
+        this.crosshair.setScrollFactor(0);
+        
+        // Update crosshair position in the game loop
+        this.input.on('pointermove', (pointer) => {
+            if (this.crosshair) {
+                this.crosshair.x = pointer.x;
+                this.crosshair.y = pointer.y;
+            }
+        });
     }
     
     createRespawnEffect(x, y) {

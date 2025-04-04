@@ -6,10 +6,11 @@ class SimpleSword {
      * Create a new simple sword
      * @param {Phaser.Scene} scene - The scene this sword belongs to
      * @param {Phaser.GameObjects.Sprite} ownerSprite - The sprite of the player using the sword
-     * @param {string} direction - The direction the sword is pointing
+     * @param {string|number} direction - The direction the sword is pointing (string for legacy or angle in radians)
      * @param {string} ownerId - The ID of the player using the sword
+     * @param {Object} targetPosition - Optional target position for cursor-based direction
      */
-    constructor(scene, ownerSprite, direction, ownerId) {
+    constructor(scene, ownerSprite, direction, ownerId, targetPosition = null) {
         this.scene = scene;
         this.ownerSprite = ownerSprite;
         this.direction = direction;
@@ -19,31 +20,56 @@ class SimpleSword {
         // Calculate sword length and position based on direction
         const swordLength = 20; // Length of the sword
         
-        // Calculate the offset for the sword end point
-        if (direction === 'up') {
-            this.offsetX = 0;
-            this.offsetY = -swordLength;
-        } else if (direction === 'down') {
-            this.offsetX = 0;
-            this.offsetY = swordLength;
-        } else if (direction === 'left') {
-            this.offsetX = -swordLength;
-            this.offsetY = 0;
-        } else if (direction === 'right') {
-            this.offsetX = swordLength;
-            this.offsetY = 0;
-        } else if (direction === 'up-left') {
-            this.offsetX = -swordLength * 0.7;
-            this.offsetY = -swordLength * 0.7;
-        } else if (direction === 'up-right') {
-            this.offsetX = swordLength * 0.7;
-            this.offsetY = -swordLength * 0.7;
-        } else if (direction === 'down-left') {
-            this.offsetX = -swordLength * 0.7;
-            this.offsetY = swordLength * 0.7;
-        } else if (direction === 'down-right') {
-            this.offsetX = swordLength * 0.7;
-            this.offsetY = swordLength * 0.7;
+        // If we have a target position (cursor), calculate angle to it
+        if (targetPosition) {
+            // Calculate direction vector from player to target
+            const directionX = targetPosition.x - ownerSprite.x;
+            const directionY = targetPosition.y - ownerSprite.y;
+            
+            // Calculate angle in radians
+            const angle = Math.atan2(directionY, directionX);
+            
+            // Set offset based on angle
+            this.offsetX = Math.cos(angle) * swordLength;
+            this.offsetY = Math.sin(angle) * swordLength;
+            
+            // Store angle for rendering
+            this.angle = angle;
+        }
+        // Legacy direction string support
+        else if (typeof direction === 'string') {
+            // Calculate the offset for the sword end point
+            if (direction === 'up') {
+                this.offsetX = 0;
+                this.offsetY = -swordLength;
+            } else if (direction === 'down') {
+                this.offsetX = 0;
+                this.offsetY = swordLength;
+            } else if (direction === 'left') {
+                this.offsetX = -swordLength;
+                this.offsetY = 0;
+            } else if (direction === 'right') {
+                this.offsetX = swordLength;
+                this.offsetY = 0;
+            } else if (direction === 'up-left') {
+                this.offsetX = -swordLength * 0.7;
+                this.offsetY = -swordLength * 0.7;
+            } else if (direction === 'up-right') {
+                this.offsetX = swordLength * 0.7;
+                this.offsetY = -swordLength * 0.7;
+            } else if (direction === 'down-left') {
+                this.offsetX = -swordLength * 0.7;
+                this.offsetY = swordLength * 0.7;
+            } else if (direction === 'down-right') {
+                this.offsetX = swordLength * 0.7;
+                this.offsetY = swordLength * 0.7;
+            }
+        }
+        // If direction is a number (angle in radians)
+        else if (typeof direction === 'number') {
+            this.angle = direction;
+            this.offsetX = Math.cos(direction) * swordLength;
+            this.offsetY = Math.sin(direction) * swordLength;
         }
         
         // Calculate initial end point of the sword

@@ -150,6 +150,69 @@
             margin-top: 5px; 
             opacity: 0.7;
         }
+        /* Controls container */
+        #controlsContainer {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 5px;
+            color: white;
+            z-index: 100;
+            max-width: 300px;
+            transition: all 0.3s ease;
+            font-size: 14px;
+        }
+        #controlsHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            padding-bottom: 5px;
+        }
+        #controlsHeader h3 {
+            margin: 0;
+            padding: 0;
+            font-size: 16px;
+        }
+        #toggleControls {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+        }
+        #controlsList {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        #controlsList li {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        .control-key {
+            background-color: #444;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-right: 10px;
+            min-width: 50px;
+            text-align: center;
+            font-weight: bold;
+            font-family: monospace;
+            font-size: 12px;
+            display: inline-block;
+            border: 1px solid #666;
+        }
+        .control-action {
+            flex: 1;
+        }
+        .mouse-icon {
+            font-size: 16px;
+        }
         /* Mobile styles */
         @media (max-width: 768px) {
             #nameInputContainer {
@@ -170,6 +233,14 @@
                 padding: 10px;
                 margin-bottom: 5px;
             }
+            #controlsContainer {
+                font-size: 12px;
+                max-width: 80%;
+            }
+            .control-key {
+                min-width: 30px;
+                padding: 2px 4px;
+            }
         }
     </style>
 </head>
@@ -181,6 +252,37 @@
         <div class="hint">Press Enter to confirm. Focus on input will pause game controls.</div>
     </div>
     
+    <div id="controlsContainer">
+        <div id="controlsHeader">
+            <h3>Game Controls</h3>
+            <button id="toggleControls">−</button>
+        </div>
+        <ul id="controlsList">
+            <li><span class="control-key">WASD</span> <span class="control-action">Move character</span></li>
+            <li><span class="control-key">Space</span> <span class="control-action">Draw circle</span></li>
+            <li><span class="control-key">R</span> <span class="control-action">Reload ammo</span></li>
+            <li><span class="control-key">E</span> <span class="control-action">Sword attack</span></li>
+            <li><span class="control-key"><span class="mouse-icon">🖱️</span> Left</span> <span class="control-action">Shoot at cursor</span></li>
+            <li><span class="control-key"><span class="mouse-icon">🖱️</span> Right</span> <span class="control-action">Sword attack</span></li>
+        </ul>
+    </div>
+    
     <div id="gameContainer"></div>
+    
+    <script>
+        // Controls panel toggle functionality
+        document.getElementById('toggleControls').addEventListener('click', function() {
+            const controlsList = document.getElementById('controlsList');
+            const toggleButton = document.getElementById('toggleControls');
+            
+            if (controlsList.style.display === 'none') {
+                controlsList.style.display = 'block';
+                toggleButton.textContent = '−';
+            } else {
+                controlsList.style.display = 'none';
+                toggleButton.textContent = '+';
+            }
+        });
+    </script>
 </body>
 </html>

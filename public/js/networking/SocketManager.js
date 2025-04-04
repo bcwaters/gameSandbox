@@ -314,14 +314,18 @@ class SocketManager {
      * @param {number} y - The y position
      * @param {number} rotation - The rotation angle
      * @param {string} direction - The direction
+     * @param {Object} targetPosition - Optional target position for cursor-based direction
      */
-    swordUsed(x, y, rotation, direction) {
+    swordUsed(x, y, rotation, direction, targetPosition = null) {
         this.socket.emit('swordUsed', {
             playerId: this.playerId,
             x: x,
             y: y,
             rotation: rotation,
-            direction: direction
+            direction: direction,
+            targetX: targetPosition ? targetPosition.x : null,
+            targetY: targetPosition ? targetPosition.y : null,
+            useTargetPosition: !!targetPosition
         });
     }
     

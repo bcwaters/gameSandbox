@@ -183,7 +183,10 @@ class Game {
           x: swordData.x,
           y: swordData.y,
           rotation: swordData.rotation,
-          direction: swordData.direction
+          direction: swordData.direction,
+          targetX: swordData.targetX || null,
+          targetY: swordData.targetY || null,
+          useTargetPosition: swordData.useTargetPosition || false
         });
       }
     });
