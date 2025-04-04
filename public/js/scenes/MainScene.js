@@ -118,26 +118,47 @@ class MainScene extends Phaser.Scene {
             this.ui = new UserInterface(this);
             console.log('User interface created');
             
-            // Set world bounds explicitly - adjust for UI height and use larger world size
-            console.log('Setting world bounds adjusted for UI');
+            // Set world bounds explicitly - adjust for UI height and use larger world size with 30px padding
+            console.log('Setting world bounds adjusted for UI and padding');
             const uiHeight = this.ui.UI_HEIGHT;
             const gameWidth = this.scale.width;
             const gameHeight = this.scale.height;
             const worldWidth = 1600;  // Larger world width
             const worldHeight = 1600; // Larger world height
-            console.log(`Game dimensions: ${gameWidth}x${gameHeight}, World dimensions: ${worldWidth}x${worldHeight}`);
-            this.physics.world.setBounds(0, uiHeight, worldWidth, worldHeight - uiHeight);
+            const PADDING = 30; // Add padding around the world
+            console.log(`Game dimensions: ${gameWidth}x${gameHeight}, World dimensions: ${worldWidth}x${worldHeight}, Padding: ${PADDING}px`);
             
-            // Add background to make sure rendering is working - sized to match world bounds
-            console.log('Creating background rectangle');
-            const background = this.add.rectangle(
+            // Set physics world bounds with padding
+            this.physics.world.setBounds(PADDING, uiHeight + PADDING, worldWidth - (PADDING * 2), worldHeight - uiHeight - (PADDING * 2));
+            
+            // Create visual barriers at the edges of the playable area
+            this.createWorldBarrier(PADDING, uiHeight + PADDING, worldWidth - (PADDING * 2), 5, 0x888888); // Top
+            this.createWorldBarrier(PADDING, worldHeight - PADDING, worldWidth - (PADDING * 2), 5, 0x888888); // Bottom
+            this.createWorldBarrier(PADDING, uiHeight + PADDING, 5, worldHeight - uiHeight - (PADDING * 2), 0x888888); // Left
+            this.createWorldBarrier(worldWidth - PADDING, uiHeight + PADDING, 5, worldHeight - uiHeight - (PADDING * 2), 0x888888); // Right
+            
+            // Add background to make sure rendering is working - sized to match world bounds (including padding)
+            console.log('Creating background rectangles');
+            
+            // Full background (darker)
+            const fullBackground = this.add.rectangle(
                 worldWidth / 2, // Center horizontally in world
                 uiHeight + (worldHeight - uiHeight) / 2, // Center of game area (below UI)
                 worldWidth, // Full world width
                 worldHeight - uiHeight, // World height (adjusted for UI)
-                0x222222
+                0x111111 // Dark background
             );
-            background.setDepth(-10);
+            fullBackground.setDepth(-20);
+            
+            // Playable area background (lighter)
+            const playableBackground = this.add.rectangle(
+                worldWidth / 2, // Center horizontally
+                uiHeight + (worldHeight - uiHeight) / 2, // Center vertically in game area
+                worldWidth - (PADDING * 2), // Width with padding
+                worldHeight - uiHeight - (PADDING * 2), // Height with padding
+                0x222222 // Slightly lighter
+            );
+            playableBackground.setDepth(-10);
             
             // Show a text to indicate the game has loaded
             console.log('Creating loading text');
@@ -1289,6 +1310,22 @@ class MainScene extends Phaser.Scene {
                         }
                     }
                 });
+                
+                // Update the minimap after processing all obstacles
+                if (this.ui) {
+                    this.ui.updateMinimapObstacles();
+                    
+                    // Ensure local player is always visible on minimap
+                    if (this.player) {
+                        this.ui.updateMinimapPlayer(
+                            this.socketManager.getPlayerId(),
+                            this.player.sprite.x,
+                            this.player.sprite.y,
+                            true,  // isLocalPlayer
+                            true   // isVisible (always true for local player)
+                        );
+                    }
+                }
             }
             
             // Update coins if they're included in this update
@@ -1810,7 +1847,8 @@ class MainScene extends Phaser.Scene {
         
         // Make camera follow the player but don't follow in the UI area (top of screen)
         const uiHeight = this.ui.UI_HEIGHT;
-        this.cameras.main.setBounds(0, uiHeight, 1600, 1600 - uiHeight);
+        const PADDING = 30; // Same padding as the world bounds
+        this.cameras.main.setBounds(PADDING, uiHeight + PADDING, 1600 - (PADDING * 2), 1600 - uiHeight - (PADDING * 2));
         this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
         this.cameras.main.setDeadzone(100, 100); // Add deadzone for smoother camera movement
     }
@@ -2192,6 +2230,22 @@ class MainScene extends Phaser.Scene {
     }
     
     // createSwordVisual method removed as we now use SimpleSword class
+    
+    /**
+     * Create a visual barrier at the world boundaries
+     * @param {number} x - X position of the barrier
+     * @param {number} y - Y position of the barrier
+     * @param {number} width - Width of the barrier
+     * @param {number} height - Height of the barrier
+     * @param {number} color - Color of the barrier
+     * @returns {Phaser.GameObjects.Rectangle} The barrier rectangle
+     */
+    createWorldBarrier(x, y, width, height, color) {
+        const barrier = this.add.rectangle(x, y, width, height, color);
+        barrier.setOrigin(0, 0);
+        barrier.setDepth(5);
+        return barrier;
+    }
     
     handlePlayerDefeat() {
         this.isDefeated = true;

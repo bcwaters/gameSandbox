@@ -220,12 +220,18 @@ class ProjectileManager {
       projectile.x += projectile.velocityX * clampedDeltaTime;
       projectile.y += projectile.velocityY * clampedDeltaTime;
       
-      // Check if out of bounds - add small buffer to ensure cleanup
-      if (projectile.x < -10 || projectile.x > config.WORLD_WIDTH + 10 || 
-          projectile.y < -10 || projectile.y > config.WORLD_HEIGHT + 10) {
+      // Check if out of bounds - with 30 pixel padding plus a small buffer
+      const PADDING = 30;
+      if (projectile.x < PADDING - 10 || projectile.x > config.WORLD_WIDTH - PADDING + 10 || 
+          projectile.y < PADDING - 10 || projectile.y > config.WORLD_HEIGHT - PADDING + 10) {
         // Remove projectile
         this.projectiles.splice(i, 1);
         this.io.emit('projectileDestroyed', projectile.id);
+        // Create an impact effect when hitting the boundary
+        this.io.emit('projectileImpact', {
+          x: projectile.x,
+          y: projectile.y
+        });
         continue;
       }
       

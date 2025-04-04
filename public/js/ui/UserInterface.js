@@ -594,16 +594,74 @@ class UserInterface {
      * Update all obstacles on the minimap
      */
     updateMinimapObstacles() {
-        // Clear existing obstacles
+        // Save a reference to the viewport indicator
+        const viewport = this.minimapViewport;
+        
+        // Save references to all player dots
+        const playerDots = {};
+        Object.entries(this.minimapPlayers).forEach(([id, dot]) => {
+            if (dot && dot.active) {
+                playerDots[id] = {
+                    dot: dot,
+                    x: dot.x,
+                    y: dot.y,
+                    visible: dot.visible,
+                    alpha: dot.alpha,
+                    scale: dot.scale
+                };
+            }
+        });
+        
+        // Clear existing dots
         this.minimapDots.removeAll(true);
+        
+        // Re-create viewport indicator if it existed
+        if (viewport) {
+            this.minimapViewport = this.scene.add.rectangle(
+                viewport.x, viewport.y,
+                viewport.width, viewport.height,
+                0xFFFFFF, 0
+            );
+            this.minimapViewport.setStrokeStyle(1, 0xFFFFFF, 0.5);
+            this.minimapDots.add(this.minimapViewport);
+        }
         
         // Re-add all obstacles
         this.addObstaclesToMinimap();
         
-        // Re-add all players that were previously on the minimap
-        Object.entries(this.minimapPlayers).forEach(([id, dot]) => {
-            if (dot && dot.active) {
-                this.minimapDots.add(dot);
+        // Re-add all player dots with their previous properties
+        Object.entries(playerDots).forEach(([id, data]) => {
+            // Create a new dot with the same properties
+            const isLocalPlayer = id === this.scene.socketManager.getPlayerId();
+            const color = isLocalPlayer ? 0x00AAFF : 0xFF4444;
+            const size = isLocalPlayer ? 5 : 4;
+            
+            const newDot = this.scene.add.circle(
+                data.x, data.y,
+                size / 2,
+                color,
+                1
+            );
+            
+            // Restore visibility and other properties
+            newDot.setVisible(data.visible);
+            newDot.setAlpha(data.alpha);
+            newDot.setScale(data.scale);
+            
+            // Add to tracking and container
+            this.minimapPlayers[id] = newDot;
+            this.minimapDots.add(newDot);
+            
+            // Restore pulsing effect for local player
+            if (isLocalPlayer) {
+                this.scene.tweens.add({
+                    targets: newDot,
+                    alpha: 0.7,
+                    scale: 0.8,
+                    duration: 1000,
+                    yoyo: true,
+                    repeat: -1
+                });
             }
         });
     }

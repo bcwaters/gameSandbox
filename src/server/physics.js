@@ -62,9 +62,10 @@ class PhysicsManager {
       // Set moving state
       player.moving = moving;
       
-      // World bounds checking
-      player.x = Math.max(0, Math.min(player.x, config.WORLD_WIDTH));
-      player.y = Math.max(0, Math.min(player.y, config.WORLD_HEIGHT));
+      // World bounds checking with 30 pixel padding
+      const PADDING = 30;
+      player.x = Math.max(PADDING, Math.min(player.x, config.WORLD_WIDTH - PADDING));
+      player.y = Math.max(PADDING, Math.min(player.y, config.WORLD_HEIGHT - PADDING));
       
       // Check for obstacle collision if obstacle manager is provided
       if (obstacleManager && moving) {
@@ -156,11 +157,12 @@ class PhysicsManager {
             player2.y += moveY;
           }
           
-          // Keep within world bounds
-          player1.x = Math.max(0, Math.min(player1.x, config.WORLD_WIDTH));
-          player1.y = Math.max(0, Math.min(player1.y, config.WORLD_HEIGHT));
-          player2.x = Math.max(0, Math.min(player2.x, config.WORLD_WIDTH));
-          player2.y = Math.max(0, Math.min(player2.y, config.WORLD_HEIGHT));
+          // Keep within world bounds with 30 pixel padding
+          const PADDING = 30;
+          player1.x = Math.max(PADDING, Math.min(player1.x, config.WORLD_WIDTH - PADDING));
+          player1.y = Math.max(PADDING, Math.min(player1.y, config.WORLD_HEIGHT - PADDING));
+          player2.x = Math.max(PADDING, Math.min(player2.x, config.WORLD_WIDTH - PADDING));
+          player2.y = Math.max(PADDING, Math.min(player2.y, config.WORLD_HEIGHT - PADDING));
         }
       }
     }

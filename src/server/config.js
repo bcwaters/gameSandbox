@@ -23,7 +23,7 @@ const GameConfig = {
   WORLD_HEIGHT: 1600,
   UI_HEIGHT: 50, // Height of the UI navbar
   
-  // Respawn positions distributed across the larger map (adjusted for UI height)
+  // Respawn positions distributed across the larger map (adjusted for UI height and 30px padding)
   RESPAWN_POSITIONS: [
     { x: 150, y: 150 },     // Top left
     { x: 800, y: 150 },     // Top middle
