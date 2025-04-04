@@ -101,8 +101,23 @@ class Game {
     socket.on('fireProjectile', (projectileData) => {
       const player = this.playerManager.getPlayer(socket.id);
       if (player) {
-        const direction = projectileData.direction || player.direction;
-        this.projectileManager.createProjectile(socket.id, player, direction);
+        // Check if target position is provided (for cursor-based aiming)
+        if (projectileData.useTargetPosition && 
+            projectileData.targetX !== null && 
+            projectileData.targetY !== null) {
+          
+          // Create a projectile with target position
+          this.projectileManager.createProjectileWithTarget(
+            socket.id, 
+            player, 
+            projectileData.targetX, 
+            projectileData.targetY
+          );
+        } else {
+          // Fallback to direction-based firing (backward compatibility)
+          const direction = projectileData.direction || player.direction;
+          this.projectileManager.createProjectile(socket.id, player, direction);
+        }
       }
     });
     

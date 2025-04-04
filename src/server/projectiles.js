@@ -106,6 +106,70 @@ class ProjectileManager {
     
     return projectile;
   }
+  
+  /**
+   * Create a new projectile with a target position (cursor-based aiming)
+   * @param {string} playerId - The socket ID of the player who fired
+   * @param {Object} player - The player object
+   * @param {number} targetX - The X coordinate of the target position (cursor)
+   * @param {number} targetY - The Y coordinate of the target position (cursor)
+   * @returns {Object} The projectile object
+   */
+  createProjectileWithTarget(playerId, player, targetX, targetY) {
+    // Skip if player is out of ammo or defeated
+    if (player.ammo <= 0 || player.defeated) return null;
+    
+    // Decrease player's ammo
+    player.ammo--;
+    
+    // Calculate direction vector from player to target (cursor position)
+    const directionX = targetX - player.x;
+    const directionY = targetY - player.y;
+    
+    // Normalize the direction vector
+    const length = Math.sqrt(directionX * directionX + directionY * directionY);
+    const normalizedX = directionX / length;
+    const normalizedY = directionY / length;
+    
+    // Set an offset along the direction vector to prevent self-collision
+    const offsetDistance = 40;
+    const offsetX = normalizedX * offsetDistance;
+    const offsetY = normalizedY * offsetDistance;
+    
+    // Create a unique projectile ID
+    const uniqueId = `${playerId}_${Date.now()}_${Math.random().toString().slice(2, 8)}`;
+    
+    // Create projectile at player position + offset
+    const projectile = {
+      id: uniqueId,
+      x: player.x + offsetX,
+      y: player.y + offsetY,
+      velocityX: 0,
+      velocityY: 0,
+      playerId: playerId,
+      ownerName: player.name || 'unknown'
+    };
+    
+    // Set velocity based on the normalized direction
+    const speed = config.PROJECTILE_SPEED;
+    projectile.velocityX = normalizedX * speed;
+    projectile.velocityY = normalizedY * speed;
+    
+    // Add to projectiles array
+    this.projectiles.push(projectile);
+    
+    // Emit to all clients
+    this.io.emit('projectileFired', {
+      id: projectile.id,
+      x: projectile.x,
+      y: projectile.y,
+      velocityX: projectile.velocityX,
+      velocityY: projectile.velocityY,
+      playerId: playerId
+    });
+    
+    return projectile;
+  }
 
   /**
    * Remove a projectile

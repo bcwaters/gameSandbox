@@ -252,20 +252,26 @@ class MainScene extends Phaser.Scene {
             this.useSword();
         });
         
-        // Add shooting key
+        // Add circle drawing key (Spacebar)
         this.input.keyboard.on('keydown-SPACE', () => {
             // Skip if text input is focused
             if (this.ui.isInputActive()) return;
             
-            // Check if player exists and has ammo
-            if (this.player && this.player.ammo > 0) {
-                this.fireProjectile();
-                this.player.setAmmo(this.player.ammo - 1);
-                this.ui.updateAmmoCounter(this.player.ammo);
+            // Skip if player is defeated
+            if (this.isDefeated) return;
+            
+            // Get cursor position for the circle
+            const mousePointer = this.input.activePointer;
+            if (mousePointer) {
+                const worldX = mousePointer.worldX;
+                const worldY = mousePointer.worldY;
+                
+                // Draw a circle at the cursor position (send to server)
+                this.createPlayerCircle(worldX, worldY);
             }
         });
         
-        // Setup click handler for drawing circles
+        // Setup mouse click handlers
         this.input.on('pointerdown', (pointer) => {
             // Skip if text input is focused
             if (this.ui.isInputActive()) return;
@@ -273,12 +279,24 @@ class MainScene extends Phaser.Scene {
             // Skip if player is defeated
             if (this.isDefeated) return;
             
-            // Get world position where player clicked
-            const worldX = pointer.worldX;
-            const worldY = pointer.worldY;
-            
-            // Draw a circle at the clicked position (send to server)
-            this.createPlayerCircle(worldX, worldY);
+            // Left click (button 0) - Shoot
+            if (pointer.button === 0) {
+                // Check if player exists and has ammo
+                if (this.player && this.player.ammo > 0) {
+                    this.fireProjectile();
+                    this.player.setAmmo(this.player.ammo - 1);
+                    this.ui.updateAmmoCounter(this.player.ammo);
+                }
+            }
+            // Right click (button 2) - Sword
+            else if (pointer.button === 2) {
+                this.useSword();
+            }
+        });
+        
+        // Prevent the browser context menu on right click
+        this.game.canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
         });
         
         // Add mobile touch controls for small screens or mobile devices
@@ -344,10 +362,18 @@ class MainScene extends Phaser.Scene {
         swordButton.setScrollFactor(0);
         swordButton.setInteractive();
         
-        // Reload button (above shoot button)
-        const reloadButtonX = shootButtonX;
-        const reloadButtonY = shootButtonY - (buttonRadius * 2 + buttonSpacing);
-        const reloadButton = this.add.circle(reloadButtonX, reloadButtonY, buttonRadius, 0x0000ff, 0.3);
+        // Circle button (above shoot button)
+        const circleButtonX = shootButtonX;
+        const circleButtonY = shootButtonY - (buttonRadius * 2 + buttonSpacing);
+        const circleButton = this.add.circle(circleButtonX, circleButtonY, buttonRadius, 0x0000ff, 0.3);
+        circleButton.setDepth(100);
+        circleButton.setScrollFactor(0);
+        circleButton.setInteractive();
+        
+        // Reload button (above circle button)
+        const reloadButtonX = circleButtonX;
+        const reloadButtonY = circleButtonY - (buttonRadius * 2 + buttonSpacing);
+        const reloadButton = this.add.circle(reloadButtonX, reloadButtonY, buttonRadius, 0x9900ff, 0.3);
         reloadButton.setDepth(100);
         reloadButton.setScrollFactor(0);
         reloadButton.setInteractive();
@@ -364,6 +390,12 @@ class MainScene extends Phaser.Scene {
         }).setOrigin(0.5);
         swordLabel.setDepth(101);
         swordLabel.setScrollFactor(0);
+        
+        const circleLabel = this.add.text(circleButtonX, circleButtonY, 'CIRCLE', {
+            fontSize: '14px', fill: '#ffffff', stroke: '#000000', strokeThickness: 3
+        }).setOrigin(0.5);
+        circleLabel.setDepth(101);
+        circleLabel.setScrollFactor(0);
         
         const reloadLabel = this.add.text(reloadButtonX, reloadButtonY, 'RELOAD', {
             fontSize: '14px', fill: '#ffffff', stroke: '#000000', strokeThickness: 3
@@ -386,6 +418,7 @@ class MainScene extends Phaser.Scene {
         this.buttonStates = {
             shoot: false,
             sword: false,
+            circle: false,
             reload: false
         };
         
@@ -433,6 +466,37 @@ class MainScene extends Phaser.Scene {
             this.buttonStates.sword = false;
         });
         
+        // Circle button handler
+        circleButton.on('pointerdown', () => {
+            if (this.canPressCircle) {
+                this.buttonStates.circle = true;
+                this.canPressCircle = false;
+                
+                // On mobile, use the center of screen as a fallback for cursor position
+                const camera = this.cameras.main;
+                // Calculate the center of the screen in world coordinates
+                const worldX = camera.scrollX + camera.width / 2;
+                const worldY = camera.scrollY + camera.height / 2;
+                
+                // Create a circle at the calculated position
+                this.createPlayerCircle(worldX, worldY);
+                
+                // Add cooldown
+                this.time.delayedCall(500, () => {
+                    this.canPressCircle = true;
+                });
+            }
+        });
+        
+        circleButton.on('pointerout', () => {
+            this.buttonStates.circle = false;
+        });
+        
+        circleButton.on('pointerup', () => {
+            this.buttonStates.circle = false;
+        });
+        
+        // Reload button handler
         reloadButton.on('pointerdown', () => {
             if (this.canPressReload) {
                 this.buttonStates.reload = true;
@@ -542,6 +606,7 @@ class MainScene extends Phaser.Scene {
         // Initialize button cooldowns
         this.canPressShoot = true;
         this.canPressSword = true;
+        this.canPressCircle = true;
         this.canPressReload = true;
         
         // Auto-fire implementation for shoot button
@@ -572,7 +637,13 @@ class MainScene extends Phaser.Scene {
         this.tryFireProjectile = () => {
             // Check if player exists and has ammo
             if (this.player && this.player.ammo > 0) {
-                this.fireProjectile();
+                // For mobile auto-fire, we'll aim toward the center of the view
+                const camera = this.cameras.main;
+                if (camera) {
+                    // Call modified fireProjectile method that supports targeting
+                    this.fireProjectile();
+                }
+                
                 this.player.setAmmo(this.player.ammo - 1);
                 this.ui.updateAmmoCounter(this.player.ammo);
             }
@@ -584,9 +655,11 @@ class MainScene extends Phaser.Scene {
             joystickThumb,
             shootButton,
             swordButton,
+            circleButton,
             reloadButton,
             shootLabel,
             swordLabel,
+            circleLabel,
             reloadLabel
         };
     }
@@ -1792,8 +1865,21 @@ class MainScene extends Phaser.Scene {
             this.shootSound.play({ volume: 0.5 });
         }
         
-        // Send to server - only send the direction, server will handle creation
-        this.socketManager.fireProjectile(this.lastDirection);
+        // Get cursor position to determine firing direction
+        const mousePointer = this.input.activePointer;
+        if (mousePointer) {
+            // Create target position object with cursor coordinates
+            const targetPosition = {
+                x: mousePointer.worldX,
+                y: mousePointer.worldY
+            };
+            
+            // Send to server with both direction and target position
+            this.socketManager.fireProjectile(this.lastDirection, targetPosition);
+        } else {
+            // Fallback to direction-based firing if cursor position not available
+            this.socketManager.fireProjectile(this.lastDirection);
+        }
     }
     
     handleProjectileHit(projectileSprite, playerHit) {

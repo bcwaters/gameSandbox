@@ -266,12 +266,16 @@ class SocketManager {
     
     /**
      * Send projectile fire event to the server
-     * @param {string} direction - The direction to fire
+     * @param {string} direction - The direction string (for backwards compatibility)
+     * @param {object} targetPosition - The target position to fire towards (x, y)
      */
-    fireProjectile(direction) {
+    fireProjectile(direction, targetPosition) {
         this.socket.emit('fireProjectile', {
             direction: direction,
-            playerId: this.playerId
+            playerId: this.playerId,
+            targetX: targetPosition ? targetPosition.x : null,
+            targetY: targetPosition ? targetPosition.y : null,
+            useTargetPosition: !!targetPosition
         });
     }
     
