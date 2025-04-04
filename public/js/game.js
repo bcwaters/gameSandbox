@@ -34,9 +34,12 @@ function initializeGame() {
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
         
-        // Default game dimensions
+        // Default game dimensions (viewport size)
         let gameWidth = 800;
         let gameHeight = 600;
+        // World size is larger than the viewport
+        const worldWidth = 1600;
+        const worldHeight = 1600;
         
         // Configure scaling based on device
         console.log('Creating game configuration');

@@ -19,22 +19,26 @@ const GameConfig = {
   SWORD_COOLDOWN: 1000,
   
   // World settings
-  WORLD_WIDTH: 800,
-  WORLD_HEIGHT: 600,
+  WORLD_WIDTH: 1600,
+  WORLD_HEIGHT: 1600,
   UI_HEIGHT: 50, // Height of the UI navbar
   
-  // Respawn positions (adjusted for UI height)
+  // Respawn positions distributed across the larger map (adjusted for UI height)
   RESPAWN_POSITIONS: [
-    { x: 100, y: 150 }, // Y adjusted for UI
-    { x: 700, y: 150 }, // Y adjusted for UI
-    { x: 100, y: 500 }, 
-    { x: 700, y: 500 },
-    { x: 400, y: 325 }  // Y adjusted for UI
+    { x: 150, y: 150 },     // Top left
+    { x: 800, y: 150 },     // Top middle
+    { x: 1450, y: 150 },    // Top right
+    { x: 150, y: 800 },     // Middle left
+    { x: 800, y: 800 },     // Center
+    { x: 1450, y: 800 },    // Middle right
+    { x: 150, y: 1450 },    // Bottom left
+    { x: 800, y: 1450 },    // Bottom middle
+    { x: 1450, y: 1450 }    // Bottom right
   ],
   
   // Obstacle settings
-  OBSTACLE_COUNT: 10,           // Initial number of obstacles to place
-  MAX_OBSTACLES: 30,            // Maximum number of obstacles allowed
+  OBSTACLE_COUNT: 20,           // Initial number of obstacles to place (increased for larger map)
+  MAX_OBSTACLES: 60,            // Maximum number of obstacles allowed (increased for larger map)
   OBSTACLE_SIZE: 30,            // Size of obstacles in pixels
   OBSTACLE_MAX_HEALTH: 2,       // Number of sword hits to destroy
   OBSTACLE_MIN_DISTANCE: 100,   // Minimum distance between obstacles and respawn points

@@ -112,21 +112,23 @@ class MainScene extends Phaser.Scene {
             this.ui = new UserInterface(this);
             console.log('User interface created');
             
-            // Set world bounds explicitly - adjust for UI height
+            // Set world bounds explicitly - adjust for UI height and use larger world size
             console.log('Setting world bounds adjusted for UI');
             const uiHeight = this.ui.UI_HEIGHT;
             const gameWidth = this.scale.width;
             const gameHeight = this.scale.height;
-            console.log(`Game dimensions: ${gameWidth}x${gameHeight}`);
-            this.physics.world.setBounds(0, uiHeight, gameWidth, gameHeight - uiHeight);
+            const worldWidth = 1600;  // Larger world width
+            const worldHeight = 1600; // Larger world height
+            console.log(`Game dimensions: ${gameWidth}x${gameHeight}, World dimensions: ${worldWidth}x${worldHeight}`);
+            this.physics.world.setBounds(0, uiHeight, worldWidth, worldHeight - uiHeight);
             
-            // Add background to make sure rendering is working
+            // Add background to make sure rendering is working - sized to match world bounds
             console.log('Creating background rectangle');
             const background = this.add.rectangle(
-                gameWidth / 2, // Center horizontally
-                uiHeight + (gameHeight - uiHeight) / 2, // Center of game area (below UI)
-                gameWidth, // Full width
-                gameHeight - uiHeight, // height (adjusted for UI)
+                worldWidth / 2, // Center horizontally in world
+                uiHeight + (worldHeight - uiHeight) / 2, // Center of game area (below UI)
+                worldWidth, // Full world width
+                worldHeight - uiHeight, // World height (adjusted for UI)
                 0x222222
             );
             background.setDepth(-10);
@@ -627,6 +629,11 @@ class MainScene extends Phaser.Scene {
                     this.createObstacleOutline(outlineInfo);
                 });
             }
+            
+            // Update minimap obstacles
+            if (this.ui) {
+                this.ui.updateMinimapObstacles();
+            }
         });
         
         // When an obstacle is hit
@@ -671,6 +678,11 @@ class MainScene extends Phaser.Scene {
                         respawnIn: destroyInfo.respawnIn // Pass the respawn time to show countdown
                     });
                 }
+                
+                // Update minimap obstacles
+                if (this.ui) {
+                    this.ui.updateMinimapObstacles();
+                }
             }
         });
         
@@ -683,6 +695,11 @@ class MainScene extends Phaser.Scene {
         this.socketManager.on('newObstacle', (obstacleInfo) => {
             // Create the new obstacle
             this.createObstacle(obstacleInfo);
+            
+            // Update minimap obstacles
+            if (this.ui) {
+                this.ui.updateMinimapObstacles();
+            }
             
             // Add a visual spawning effect
             const spawnEffect = this.add.circle(
@@ -895,6 +912,22 @@ class MainScene extends Phaser.Scene {
         // When a new player joins
         this.socketManager.on('newPlayer', (playerInfo) => {
             this.addOtherPlayer(playerInfo);
+            
+            // Check if new player is visible in viewport
+            const isVisible = playerInfo.x !== undefined && 
+                            playerInfo.y !== undefined && 
+                            this.isPositionVisible(playerInfo.x, playerInfo.y);
+            
+            // Add new player to minimap (only visible if in viewport)
+            if (this.ui && playerInfo.x !== undefined && playerInfo.y !== undefined) {
+                this.ui.updateMinimapPlayer(
+                    playerInfo.id,
+                    playerInfo.x,
+                    playerInfo.y,
+                    false, // Not the local player
+                    isVisible // Only show if visible in viewport
+                );
+            }
         });
         
         // When a player disconnects
@@ -902,6 +935,11 @@ class MainScene extends Phaser.Scene {
             if (this.otherPlayers[id]) {
                 this.otherPlayers[id].destroy();
                 delete this.otherPlayers[id];
+                
+                // Remove player from minimap
+                if (this.ui) {
+                    this.ui.removeMinimapPlayer(id);
+                }
             }
         });
         
@@ -912,6 +950,20 @@ class MainScene extends Phaser.Scene {
                 otherPlayer.sprite.x = playerInfo.x;
                 otherPlayer.sprite.y = playerInfo.y;
                 otherPlayer.playAnimation(playerInfo.direction, playerInfo.moving);
+                
+                // Check if moved player is visible in viewport
+                const isVisible = this.isPositionVisible(playerInfo.x, playerInfo.y);
+                
+                // Update minimap position (only visible if in viewport)
+                if (this.ui) {
+                    this.ui.updateMinimapPlayer(
+                        playerInfo.id,
+                        playerInfo.x,
+                        playerInfo.y,
+                        false, // Not the local player
+                        isVisible // Only show if visible in viewport
+                    );
+                }
             }
         });
         
@@ -1047,6 +1099,20 @@ class MainScene extends Phaser.Scene {
                             otherPlayer.playAnimation(serverPlayer.direction, true);
                         } else {
                             otherPlayer.playAnimation(serverPlayer.direction, false);
+                        }
+                        
+                        // Check if player is visible in viewport for minimap
+                        const isVisible = this.isPositionVisible(serverPlayer.x, serverPlayer.y);
+                        
+                        // Update minimap position (only visible if in viewport)
+                        if (this.ui) {
+                            this.ui.updateMinimapPlayer(
+                                serverPlayer.id,
+                                serverPlayer.x,
+                                serverPlayer.y,
+                                false, // Not the local player
+                                isVisible // Only show if visible in viewport
+                            );
                         }
                     }
                 }
@@ -1247,6 +1313,20 @@ class MainScene extends Phaser.Scene {
                     respawnedPlayer.sprite.x,
                     respawnedPlayer.sprite.y
                 );
+                
+                // Check if respawned player is visible in viewport
+                const isVisible = this.isPositionVisible(data.x, data.y);
+                
+                // Update minimap with respawned player (only visible if in viewport)
+                if (this.ui) {
+                    this.ui.updateMinimapPlayer(
+                        data.playerId,
+                        data.x,
+                        data.y,
+                        false, // Not the local player
+                        isVisible // Only show if visible in viewport
+                    );
+                }
             }
         });
         
@@ -1636,6 +1716,12 @@ class MainScene extends Phaser.Scene {
         this.ui.updateHealthBar(this.player.health);
         this.ui.updateAmmoCounter(this.player.ammo);
         this.ui.updateScoreCounter(this.player.score);
+        
+        // Make camera follow the player but don't follow in the UI area (top of screen)
+        const uiHeight = this.ui.UI_HEIGHT;
+        this.cameras.main.setBounds(0, uiHeight, 1600, 1600 - uiHeight);
+        this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
+        this.cameras.main.setDeadzone(100, 100); // Add deadzone for smoother camera movement
     }
     
     addOtherPlayer(playerInfo) {
@@ -2073,12 +2159,13 @@ class MainScene extends Phaser.Scene {
         visibleArea.fillStyle(0xffffff, 0.1); // White fill for the mask
         visibleArea.fillCircle(circleData.x, circleData.y, circleData.radius); // Draw a filled circle as the mask
         
-        // Create fog overlay covering the circle area
-        const gameWidth = this.cameras.main.width;
-        const gameHeight = this.cameras.main.height;
+        // Create fog overlay covering the camera viewport 
+        // (will be updated to follow the camera)
+        const worldWidth = 1600; // Match the world size
+        const worldHeight = 1600;
         const fog = this.add.graphics();
         fog.fillStyle(0x000000, 1.0); // Black with full opacity
-        fog.fillRect(0, 0, gameWidth, gameHeight);
+        fog.fillRect(0, 0, worldWidth, worldHeight);
         fog.setDepth(100); // Below the circle outline but above game elements
         
         // Set the mask to show/hide appropriate parts
@@ -2096,7 +2183,9 @@ class MainScene extends Phaser.Scene {
             fog: fog,
             visibleArea: visibleArea,
             mask: mask,
-            insideCircle: false // Track if player is inside
+            insideCircle: false, // Track if player is inside
+            lastCameraX: 0, // Track camera position to detect movement
+            lastCameraY: 0
         };
         
         // Store reference
@@ -2109,7 +2198,7 @@ class MainScene extends Phaser.Scene {
         // Update fog mask visibility based on player position immediately
         this.updateCircleVisibility(circleObject);
         
-        // Set up continuous visibility check
+        // Set up continuous visibility check and camera tracking
         const updateVisibility = () => {
             this.updateCircleVisibility(circleObject);
         };
@@ -2230,6 +2319,47 @@ class MainScene extends Phaser.Scene {
             duration: 800,
             onComplete: () => respawnCircle.destroy()
         });
+    }
+    
+    /**
+     * Check if a position is visible within the camera's viewport
+     * @param {number} x - World X position
+     * @param {number} y - World Y position
+     * @returns {boolean} Whether the position is visible
+     */
+    isPositionVisible(x, y) {
+        if (!this.cameras || !this.cameras.main) return false;
+        
+        const camera = this.cameras.main;
+        
+        // Get camera viewport boundaries
+        const cameraLeft = camera.scrollX;
+        const cameraRight = camera.scrollX + camera.width;
+        const cameraTop = camera.scrollY;
+        const cameraBottom = camera.scrollY + camera.height;
+        
+        // Check if the position is within these boundaries
+        return (
+            x >= cameraLeft && 
+            x <= cameraRight && 
+            y >= cameraTop && 
+            y <= cameraBottom
+        );
+    }
+    
+    createRespawnEffect(x, y) {
+        // Create a respawn circle that expands outward
+        const respawnCircle = this.add.circle(x, y, 0, 0x00ffff, 0.6);
+        respawnCircle.setDepth(5);
+        
+        // Animate the respawn circle
+        this.tweens.add({
+            targets: respawnCircle,
+            radius: 50,
+            alpha: 0,
+            duration: 800,
+            onComplete: () => respawnCircle.destroy()
+        });
         
         // Create some small particles
         for (let i = 0; i < 10; i++) {
@@ -2330,8 +2460,34 @@ class MainScene extends Phaser.Scene {
         // Update all players' visuals
         this.player.update();
         
+        // Update minimap player position
+        if (this.ui && this.player.sprite) {
+            this.ui.updateMinimapPlayer(
+                this.socketManager.getPlayerId(),
+                this.player.sprite.x,
+                this.player.sprite.y,
+                true // This is the local player
+            );
+        }
+        
+        // Update other players
         Object.values(this.otherPlayers).forEach(otherPlayer => {
             otherPlayer.update();
+            
+            // Check if other player is visible in viewport
+            const isVisible = otherPlayer.sprite && 
+                              this.isPositionVisible(otherPlayer.sprite.x, otherPlayer.sprite.y);
+            
+            // Update other player positions on minimap
+            if (this.ui && otherPlayer.sprite) {
+                this.ui.updateMinimapPlayer(
+                    otherPlayer.id,
+                    otherPlayer.sprite.x,
+                    otherPlayer.sprite.y,
+                    false, // Not the local player
+                    isVisible // Only show on minimap if visible in viewport
+                );
+            }
         });
         
         // Skip game controls if player is defeated or input is focused

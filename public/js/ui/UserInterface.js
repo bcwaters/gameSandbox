@@ -12,6 +12,8 @@ class UserInterface {
         this.ammoCounterText = null;
         this.scoreCounterText = null;
         this.defeatText = null;
+        this.minimap = null;
+        this.minimapPlayers = {};
         this.maxHealth = 5;
         this.maxAmmo = 10;
         
@@ -21,6 +23,10 @@ class UserInterface {
         this.UI_BG_COLOR = 0x222222; // Dark gray background
         this.UI_BG_ALPHA = 0.8; // Semi-transparent background
         
+        // Minimap configuration
+        this.MINIMAP_SIZE = 150; // Size of the minimap in pixels
+        this.MINIMAP_SCALE = 0.09375; // Scale factor (150/1600 = 0.09375)
+        
         // Create UI container and background
         this.createUIContainer();
         
@@ -29,6 +35,7 @@ class UserInterface {
         this.createScoreCounter(); // Changed order to Health -> Score -> Ammo
         this.createAmmoCounter();
         this.createDefeatText();
+        this.createMinimap();
         
         // Set up name input handlers
         this.setupNameInput();
@@ -405,5 +412,199 @@ class UserInterface {
         if (this.nameInput) {
             this.nameInput.value = name;
         }
+    }
+    
+    /**
+     * Create the minimap
+     */
+    createMinimap() {
+        // Calculate position (bottom right of screen)
+        const posX = this.scene.cameras.main.width - this.MINIMAP_SIZE - 20;
+        const posY = this.scene.cameras.main.height - this.MINIMAP_SIZE - 20;
+        
+        // Create minimap container
+        this.minimap = this.scene.add.container(posX, posY);
+        this.minimap.setScrollFactor(0); // Fix to camera
+        this.minimap.setDepth(90); // Below main UI but above most game elements
+        
+        // Create minimap background
+        this.minimapBg = this.scene.add.rectangle(
+            0, 0, // Position within container
+            this.MINIMAP_SIZE, this.MINIMAP_SIZE, // Size
+            0x000000, 0.7 // Black with transparency
+        );
+        this.minimapBg.setOrigin(0, 0); // Top left
+        this.minimap.add(this.minimapBg);
+        
+        // Create minimap border
+        this.minimapBorder = this.scene.add.rectangle(
+            0, 0, // Position within container
+            this.MINIMAP_SIZE, this.MINIMAP_SIZE, // Size
+            0xFFFFFF, 1 // White border
+        );
+        this.minimapBorder.setOrigin(0, 0); // Top left
+        this.minimapBorder.setStrokeStyle(2, 0xFFFFFF, 0.8); // 2px white stroke
+        this.minimapBorder.setFillStyle(0, 0); // Transparent fill
+        this.minimap.add(this.minimapBorder);
+        
+        // Create boundary for world representation
+        this.worldBoundary = this.scene.add.rectangle(
+            3, 3, // Position within container (3px padding)
+            this.MINIMAP_SIZE - 6, this.MINIMAP_SIZE - 6, // Size (accounting for padding)
+            0x333333, 0.1 // Almost invisible fill
+        );
+        this.worldBoundary.setOrigin(0, 0); // Top left
+        this.worldBoundary.setStrokeStyle(1, 0x888888, 0.5); // 1px gray stroke
+        this.minimap.add(this.worldBoundary);
+        
+        // Create "dots" container to hold player markers
+        this.minimapDots = this.scene.add.container(3, 3); // Position with 3px padding
+        this.minimap.add(this.minimapDots);
+        
+        // Add viewport indicator (showing camera view on minimap)
+        this.minimapViewport = this.scene.add.rectangle(
+            0, 0, // Will be updated in update method
+            this.MINIMAP_SIZE * (800/1600), // Scale based on view width / world width
+            this.MINIMAP_SIZE * (600/1600), // Scale based on view height / world height
+            0xFFFFFF, 0
+        );
+        this.minimapViewport.setStrokeStyle(1, 0xFFFFFF, 0.5);
+        this.minimapDots.add(this.minimapViewport);
+        
+        // Create label for the minimap
+        this.minimapLabel = this.scene.add.text(
+            this.MINIMAP_SIZE / 2, -12, 
+            'MAP', 
+            {
+                fontSize: '12px',
+                fontStyle: 'bold',
+                fill: '#FFFFFF',
+                stroke: '#000000',
+                strokeThickness: 2
+            }
+        );
+        this.minimapLabel.setOrigin(0.5, 0); // Center horizontally
+        this.minimap.add(this.minimapLabel);
+        
+        // Add obstacles to minimap (static)
+        this.addObstaclesToMinimap();
+    }
+    
+    /**
+     * Add static obstacles to the minimap
+     */
+    addObstaclesToMinimap() {
+        // Get obstacles from the scene
+        const obstacles = this.scene.obstacles || {};
+        
+        // Add each obstacle as a small dot on the minimap
+        Object.values(obstacles).forEach(obstacle => {
+            if (obstacle && !obstacle.isOutline) {
+                const minimapX = obstacle.x * this.MINIMAP_SCALE;
+                const minimapY = obstacle.y * this.MINIMAP_SCALE;
+                
+                const obstacleDot = this.scene.add.rectangle(
+                    minimapX, minimapY, 
+                    3, 3, // Small dot size
+                    0x888888, 0.8 // Gray color
+                );
+                this.minimapDots.add(obstacleDot);
+            }
+        });
+    }
+    
+    /**
+     * Update a player's position on the minimap
+     * @param {string} playerId - The player's ID
+     * @param {number} x - World X position
+     * @param {number} y - World Y position
+     * @param {boolean} isLocalPlayer - Whether this is the local player
+     * @param {boolean} isVisible - Whether this player is visible in the camera viewport (only applies to other players)
+     */
+    updateMinimapPlayer(playerId, x, y, isLocalPlayer, isVisible = false) {
+        // Scale world coordinates to minimap coordinates
+        const minimapX = x * this.MINIMAP_SCALE;
+        const minimapY = y * this.MINIMAP_SCALE;
+        
+        // For local player or visible enemies, show on minimap
+        const shouldShow = isLocalPlayer || isVisible;
+        
+        // If player dot doesn't exist, create it if it should be shown
+        if (!this.minimapPlayers[playerId] && shouldShow) {
+            // Use different colors for local player (blue) and other players (red)
+            const color = isLocalPlayer ? 0x00AAFF : 0xFF4444;
+            const size = isLocalPlayer ? 5 : 4;
+            
+            // Create player dot
+            const playerDot = this.scene.add.circle(
+                minimapX, minimapY, 
+                size / 2, // Radius is half the size
+                color, 
+                1
+            );
+            
+            // Add to tracking and container
+            this.minimapPlayers[playerId] = playerDot;
+            this.minimapDots.add(playerDot);
+            
+            // Add pulsing effect for local player
+            if (isLocalPlayer) {
+                this.scene.tweens.add({
+                    targets: playerDot,
+                    alpha: 0.7,
+                    scale: 0.8,
+                    duration: 1000,
+                    yoyo: true,
+                    repeat: -1
+                });
+            }
+        } else if (this.minimapPlayers[playerId]) {
+            // Update existing player dot position if it exists
+            this.minimapPlayers[playerId].x = minimapX;
+            this.minimapPlayers[playerId].y = minimapY;
+            
+            // Show or hide based on visibility (always show local player)
+            this.minimapPlayers[playerId].setVisible(shouldShow);
+        }
+        
+        // If this is the local player, update the viewport indicator position
+        if (isLocalPlayer && this.minimapViewport) {
+            // Calculate viewport center on the minimap
+            // We need to offset by half the viewport size to center it on the player
+            const viewportWidth = this.minimapViewport.width;
+            const viewportHeight = this.minimapViewport.height;
+            
+            this.minimapViewport.x = minimapX - (viewportWidth / 2);
+            this.minimapViewport.y = minimapY - (viewportHeight / 2);
+        }
+    }
+    
+    /**
+     * Remove a player from the minimap
+     * @param {string} playerId - The player's ID
+     */
+    removeMinimapPlayer(playerId) {
+        if (this.minimapPlayers[playerId]) {
+            this.minimapPlayers[playerId].destroy();
+            delete this.minimapPlayers[playerId];
+        }
+    }
+    
+    /**
+     * Update all obstacles on the minimap
+     */
+    updateMinimapObstacles() {
+        // Clear existing obstacles
+        this.minimapDots.removeAll(true);
+        
+        // Re-add all obstacles
+        this.addObstaclesToMinimap();
+        
+        // Re-add all players that were previously on the minimap
+        Object.entries(this.minimapPlayers).forEach(([id, dot]) => {
+            if (dot && dot.active) {
+                this.minimapDots.add(dot);
+            }
+        });
     }
 }

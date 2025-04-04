@@ -11,6 +11,9 @@ class GameConfig {
             type: Phaser.AUTO,
             width: 800,
             height: 600,
+            // World size is larger than the viewport
+            worldWidth: 1600,
+            worldHeight: 1600,
             scene: {
                 preload: preload,
                 create: create,
