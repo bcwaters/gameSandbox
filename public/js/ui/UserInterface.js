@@ -17,6 +17,10 @@ class UserInterface {
         this.maxHealth = 5;
         this.maxAmmo = 10;
         
+        // UI state flags
+        this.isCharacterSelectionActive = false;
+        this.isInputFocused = false;
+        
         // UI configuration
         this.UI_HEIGHT = 50;  // Height of the UI navbar
         this.UI_PADDING = 10; // Padding inside the navbar
@@ -103,6 +107,24 @@ class UserInterface {
             card.style.padding = '15px';
             card.style.cursor = 'pointer';
             card.style.transition = 'all 0.2s ease';
+            card.style.position = 'relative'; // For selection indicator
+            
+            // Add a "select me" label at the top
+            const selectLabel = document.createElement('div');
+            selectLabel.textContent = 'CLICK TO SELECT';
+            selectLabel.style.position = 'absolute';
+            selectLabel.style.top = '5px';
+            selectLabel.style.left = '50%';
+            selectLabel.style.transform = 'translateX(-50%)';
+            selectLabel.style.backgroundColor = 'rgba(0,0,0,0.7)';
+            selectLabel.style.color = '#aaa';
+            selectLabel.style.fontSize = '12px';
+            selectLabel.style.padding = '2px 8px';
+            selectLabel.style.borderRadius = '3px';
+            selectLabel.style.opacity = '0.5';
+            selectLabel.style.transition = 'all 0.2s ease';
+            
+            card.appendChild(selectLabel);
             
             // Character image
             const image = document.createElement('img');
@@ -123,29 +145,65 @@ class UserInterface {
             
             // Add hover effects
             card.addEventListener('mouseover', () => {
-                card.style.backgroundColor = 'rgba(40,40,40,0.9)';
-                card.style.borderColor = '#0088ff';
-                card.style.boxShadow = '0 0 15px rgba(0,136,255,0.6)';
-                card.style.transform = 'translateY(-5px)';
+                if (!card.classList.contains('selected')) {
+                    card.style.backgroundColor = 'rgba(40,40,40,0.9)';
+                    card.style.borderColor = '#0088ff';
+                    card.style.boxShadow = '0 0 15px rgba(0,136,255,0.6)';
+                    card.style.transform = 'translateY(-5px)';
+                }
+                
+                // Show the selection label more prominently
+                const selectLabel = card.querySelector('div');
+                selectLabel.style.opacity = '1';
+                selectLabel.style.color = '#ffffff';
+                selectLabel.style.backgroundColor = 'rgba(0,136,255,0.7)';
             });
             
             card.addEventListener('mouseout', () => {
-                card.style.backgroundColor = 'rgba(20,20,20,0.8)';
-                card.style.borderColor = '#444';
-                card.style.boxShadow = 'none';
-                card.style.transform = 'translateY(0)';
+                if (!card.classList.contains('selected')) {
+                    card.style.backgroundColor = 'rgba(20,20,20,0.8)';
+                    card.style.borderColor = '#444';
+                    card.style.boxShadow = 'none';
+                    card.style.transform = 'translateY(0)';
+                }
+                
+                // Hide the selection label
+                const selectLabel = card.querySelector('div');
+                selectLabel.style.opacity = '0.5';
+                selectLabel.style.color = '#aaa';
+                selectLabel.style.backgroundColor = 'rgba(0,0,0,0.7)';
             });
             
             // Add click handler to select character
-            card.addEventListener('click', () => {
-                // Update game config with selected character
-                GameConfig.setPlayerCharacter(char.value);
+            card.addEventListener('click', (event) => {
+                // Remove selection from all cards
+                document.querySelectorAll('.character-card').forEach(c => {
+                    c.classList.remove('selected');
+                    c.style.backgroundColor = 'rgba(20,20,20,0.8)';
+                    c.style.borderColor = '#444';
+                    c.style.boxShadow = 'none';
+                    c.style.transform = 'translateY(0)';
+                    
+                    // Reset the label
+                    const label = c.querySelector('div');
+                    label.textContent = 'CLICK TO SELECT';
+                    label.style.color = '#aaa';
+                    label.style.backgroundColor = 'rgba(0,0,0,0.7)';
+                });
                 
-                // Hide the selection screen
-                this.hideCharacterSelectionScreen();
+                // Mark this card as selected
+                card.classList.add('selected');
+                card.style.backgroundColor = 'rgba(10,30,10,0.9)';
+                card.style.borderColor = '#00ff00';
+                card.style.boxShadow = '0 0 20px rgba(0,255,0,0.8)';
+                card.style.transform = 'translateY(-5px) scale(1.03)';
                 
-                // Notify the scene that a character has been selected
-                this.scene.onCharacterSelected(char.value);
+                // Update the label
+                const selectLabel = card.querySelector('div');
+                selectLabel.textContent = 'SELECTED!';
+                selectLabel.style.opacity = '1';
+                selectLabel.style.color = '#ffffff';
+                selectLabel.style.backgroundColor = 'rgba(0,255,0,0.7)';
             });
             
             // Append elements to card
@@ -184,9 +242,73 @@ class UserInterface {
         nameInput.style.marginBottom = '15px';
         nameInput.value = `Player${Math.floor(Math.random() * 1000)}`;
         
+        // Prevent keyboard events from bubbling up to the game
+        nameInput.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+        });
+        
+        // Handle Enter key to proceed with current selection
+        nameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                // Find which character is currently selected (via border highlighting)
+                const selectedCard = document.querySelector('.character-card.selected');
+                if (selectedCard) {
+                    // Trigger click on the selected card
+                    selectedCard.click();
+                }
+            }
+        });
+        
+        // Create a "Start Game" button
+        const startButton = document.createElement('button');
+        startButton.textContent = 'Start Game';
+        startButton.style.padding = '10px 20px';
+        startButton.style.fontSize = '18px';
+        startButton.style.fontWeight = 'bold';
+        startButton.style.backgroundColor = '#4CAF50';
+        startButton.style.color = 'white';
+        startButton.style.border = 'none';
+        startButton.style.borderRadius = '5px';
+        startButton.style.cursor = 'pointer';
+        startButton.style.marginTop = '20px';
+        startButton.style.transition = 'all 0.2s ease';
+        
+        startButton.addEventListener('mouseover', () => {
+            startButton.style.backgroundColor = '#45a049';
+            startButton.style.transform = 'scale(1.05)';
+        });
+        
+        startButton.addEventListener('mouseout', () => {
+            startButton.style.backgroundColor = '#4CAF50';
+            startButton.style.transform = 'scale(1)';
+        });
+        
+        startButton.addEventListener('click', () => {
+            // Find which character is currently selected
+            const selectedCard = document.querySelector('.character-card.selected');
+            if (selectedCard) {
+                // Get the character value from the selected card
+                const index = Array.from(document.querySelectorAll('.character-card')).indexOf(selectedCard);
+                const selectedChar = characterTypes[index].value;
+                
+                // Update game config with selected character
+                GameConfig.setPlayerCharacter(selectedChar);
+                
+                // Hide the selection screen
+                this.hideCharacterSelectionScreen();
+                
+                // Notify the scene that a character has been selected
+                this.scene.onCharacterSelected(selectedChar);
+            } else {
+                // If no card is selected, show an alert
+                alert('Please select a character before starting the game!');
+            }
+        });
+        
         // Append elements
         nameSection.appendChild(nameLabel);
         nameSection.appendChild(nameInput);
+        nameSection.appendChild(startButton);
         
         // Assemble the overlay
         this.selectionOverlay.appendChild(title);
@@ -209,6 +331,21 @@ class UserInterface {
     showCharacterSelectionScreen() {
         if (this.selectionOverlay) {
             this.selectionOverlay.style.display = 'flex';
+            
+            // Focus on the name input
+            if (this.initialNameInput) {
+                setTimeout(() => {
+                    this.initialNameInput.focus();
+                }, 100);
+            }
+            
+            // Disable game keyboard input
+            if (this.scene && this.scene.input && this.scene.input.keyboard) {
+                this.scene.input.keyboard.enabled = false;
+            }
+            
+            // Set a flag so the scene knows input should be disabled
+            this.isCharacterSelectionActive = true;
         }
     }
     
@@ -218,7 +355,23 @@ class UserInterface {
     hideCharacterSelectionScreen() {
         if (this.selectionOverlay) {
             this.selectionOverlay.style.display = 'none';
+            
+            // Re-enable game keyboard input
+            if (this.scene && this.scene.input && this.scene.input.keyboard) {
+                this.scene.input.keyboard.enabled = true;
+            }
+            
+            // Update flag
+            this.isCharacterSelectionActive = false;
         }
+    }
+    
+    /**
+     * Check if character selection is active
+     * @returns {boolean} True if character selection is active
+     */
+    isSelectionScreenActive() {
+        return this.isCharacterSelectionActive === true;
     }
     
     /**

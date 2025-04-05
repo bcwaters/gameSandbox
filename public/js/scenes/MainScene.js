@@ -3234,8 +3234,13 @@ class MainScene extends Phaser.Scene {
             }
         });
         
-        // Skip game controls if player is defeated or input is focused
-        if (this.isDefeated || this.ui.isInputActive()) return;
+        // Skip game controls if:
+        // - player is defeated
+        // - input field is focused
+        // - character selection screen is active
+        if (this.isDefeated || 
+            (this.ui && typeof this.ui.isInputActive === 'function' && this.ui.isInputActive()) || 
+            (this.ui && this.ui.isCharacterSelectionActive)) return;
         
         // Create input object based on cursor keys and mobile joystick
         const inputs = {
