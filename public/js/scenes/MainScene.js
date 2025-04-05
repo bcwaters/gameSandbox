@@ -5,7 +5,7 @@
 console.log('Defining MainScene class...');
 class MainScene extends Phaser.Scene {
     constructor() {
-        super('MainScene');
+        super({ key: 'MainScene' });
         
         this.player = null;
         this.otherPlayers = {};
@@ -20,6 +20,160 @@ class MainScene extends Phaser.Scene {
         this.obstaclesHitBySword = {};
         this.playerCircle = null; // Store the player's active circle
         this.otherPlayerCircles = {}; // Store circles from other players
+        
+        // Define SimplexNoise as a class within MainScene
+        this.SimplexNoise = class SimplexNoise {
+            constructor(randomOrSeed) {
+                let random;
+                if (typeof randomOrSeed == 'function') {
+                    random = randomOrSeed;
+                }
+                else if (randomOrSeed) {
+                    random = this.alea(randomOrSeed);
+                }
+                else {
+                    random = Math.random;
+                }
+                
+                this.p = this.buildPermutationTable(random);
+                this.perm = new Uint8Array(512);
+                this.permMod12 = new Uint8Array(512);
+                for (let i = 0; i < 512; i++) {
+                    this.perm[i] = this.p[i & 255];
+                    this.permMod12[i] = this.perm[i] % 12;
+                }
+                
+                // Initialize grad3 array
+                this.grad3 = [1,1,0,-1,1,0,1,-1,0,-1,-1,0,
+                             1,0,1,-1,0,1,1,0,-1,-1,0,-1,
+                             0,1,1,0,-1,1,0,1,-1,0,-1,-1];
+            }
+
+            noise2D(xin, yin) {
+                return 0;
+                // Skew the input space to determine which simplex cell we're in
+                const F2 = 0.5 * (Math.sqrt(3) - 1);
+                const s = (xin + yin) * F2; // Hairy factor for 2D
+                const i = Math.floor(xin + s);
+                const j = Math.floor(yin + s);
+                
+                const G2 = (3 - Math.sqrt(3)) / 6;
+                const t = (i + j) * G2;
+                const X0 = i - t; // Unskew the cell origin back to (x,y) space
+                const Y0 = j - t;
+                const x0 = xin - X0; // The x,y distances from the cell origin
+                const y0 = yin - Y0;
+                
+                // Determine which simplex we are in
+                let i1, j1; // Offsets for second (middle) corner of simplex in (i,j) coords
+                if (x0 > y0) { i1 = 1; j1 = 0; } // lower triangle, XY order: (0,0)->(1,0)->(1,1)
+                else { i1 = 0; j1 = 1; } // upper triangle, YX order: (0,0)->(0,1)->(1,1)
+                
+                // A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
+                // a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
+                // c = (3-sqrt(3))/6
+                const x1 = x0 - i1 + G2; // Offsets for middle corner in (x,y) unskewed coords
+                const y1 = y0 - j1 + G2;
+                const x2 = x0 - 1 + 2 * G2; // Offsets for last corner in (x,y) unskewed coords
+                const y2 = y0 - 1 + 2 * G2;
+                
+                // Work out the hashed gradient indices of the three simplex corners
+                const ii = i & 255;
+                const jj = j & 255;
+                
+                // Calculate the contribution from the three corners
+                let t0 = 0.5 - x0 * x0 - y0 * y0;
+                let n0 = 0;
+                if (t0 >= 0) {
+                    const gi0 = this.permMod12[ii + this.perm[jj]] * 3;
+                    t0 *= t0;
+                    n0 = t0 * t0 * (this.grad3[gi0] * x0 + this.grad3[gi0 + 1] * y0);
+                }
+                
+                let t1 = 0.5 - x1 * x1 - y1 * y1;
+                let n1 = 0;
+                if (t1 >= 0) {
+                    const gi1 = this.permMod12[ii + i1 + this.perm[jj + j1]] * 3;
+                    t1 *= t1;
+                    n1 = t1 * t1 * (this.grad3[gi1] * x1 + this.grad3[gi1 + 1] * y1);
+                }
+                
+                let t2 = 0.5 - x2 * x2 - y2 * y2;
+                let n2 = 0;
+                if (t2 >= 0) {
+                    const gi2 = this.permMod12[ii + 1 + this.perm[jj + 1]] * 3;
+                    t2 *= t2;
+                    n2 = t2 * t2 * (this.grad3[gi2] * x2 + this.grad3[gi2 + 1] * y2);
+                }
+                
+                // Add contributions from each corner to get the final noise value.
+                // The result is scaled to return values in the interval [-1,1].
+                return 70 * (n0 + n1 + n2);
+            }
+
+            buildPermutationTable(random) {
+                const p = new Uint8Array(256);
+                for (let i = 0; i < 256; i++) {
+                    p[i] = i;
+                }
+                
+                for (let i = 0; i < 255; i++) {
+                    const r = i + ~~(random() * (256 - i));
+                    const aux = p[i];
+                    p[i] = p[r];
+                    p[r] = aux;
+                }
+                
+                return p;
+            }
+
+            alea(seed) {
+                let s0 = 0;
+                let s1 = 0;
+                let s2 = 0;
+                let c = 1;
+                
+                if (seed === undefined) {
+                    seed = Math.random();
+                }
+                
+                const mash = function(data) {
+                    data = data.toString();
+                    for (let i = 0; i < data.length; i++) {
+                        const n = data.charCodeAt(i);
+                        s0 -= mash.mash(n);
+                        if (s0 < 0) s0 += 1;
+                        s1 -= mash.mash(n);
+                        if (s1 < 0) s1 += 1;
+                        s2 -= mash.mash(n);
+                        if (s2 < 0) s2 += 1;
+                    }
+                };
+                
+                mash.mash = function(data) {
+                    const n = data.toString();
+                    for (let i = 0; i < n.length; i++) {
+                        c += n.charCodeAt(i);
+                        const h = c * 0.02519603282416938;
+                        c = h >>> 0;
+                        const k = h - c;
+                        s0 = s1;
+                        s1 = s2;
+                        s2 = k - c;
+                        if (s2 < 0) s2 += 1;
+                    }
+                    return s2;
+                };
+                
+                mash(seed);
+                return function() {
+                    const t = 2091639 * s0 + c * 2.3283064365386963e-10;
+                    s0 = s1;
+                    s1 = s2;
+                    return s2 = t - (c = t | 0);
+                };
+            }
+        };
         
         console.log('MainScene constructor completed');
     }
@@ -137,28 +291,198 @@ class MainScene extends Phaser.Scene {
             this.createWorldBarrier(PADDING, uiHeight + PADDING, 5, worldHeight - uiHeight - (PADDING * 2), 0x888888); // Left
             this.createWorldBarrier(worldWidth - PADDING, uiHeight + PADDING, 5, worldHeight - uiHeight - (PADDING * 2), 0x888888); // Right
             
-            // Add background to make sure rendering is working - sized to match world bounds (including padding)
-            console.log('Creating background rectangles');
+            // Create a terrain-like background
+            console.log('Creating terrain background');
             
-            // Full background (darker)
+            // Full background (base ground layer)
             const fullBackground = this.add.rectangle(
                 worldWidth / 2, // Center horizontally in world
                 uiHeight + (worldHeight - uiHeight) / 2, // Center of game area (below UI)
                 worldWidth, // Full world width
                 worldHeight - uiHeight, // World height (adjusted for UI)
-                0x111111 // Dark background
+                0x164814 // Dark green base (grass)
             );
-            fullBackground.setDepth(-20);
+            fullBackground.setDepth(-30);
             
-            // Playable area background (lighter)
-            const playableBackground = this.add.rectangle(
-                worldWidth / 2, // Center horizontally
-                uiHeight + (worldHeight - uiHeight) / 2, // Center vertically in game area
-                worldWidth - (PADDING * 2), // Width with padding
-                worldHeight - uiHeight - (PADDING * 2), // Height with padding
-                0x222222 // Slightly lighter
-            );
-            playableBackground.setDepth(-10);
+            // Create a terrain grid
+            const gridSize = 40; // Size of each terrain "cell"
+            const playableAreaWidth = worldWidth - (PADDING * 2);
+            const playableAreaHeight = worldHeight - uiHeight - (PADDING * 2);
+            const startX = PADDING;
+            const startY = uiHeight + PADDING;
+            
+            // Create paths for more organized terrain
+            const pathsGraphics = this.add.graphics();
+            pathsGraphics.fillStyle(0x795548, 0.7); // Brown dirt color for paths
+            pathsGraphics.setDepth(-26);
+            
+            // Create horizontal path
+            const horizontalPathY = startY + Math.floor(playableAreaHeight / 2);
+            pathsGraphics.fillRect(startX, horizontalPathY - 20, playableAreaWidth, 40);
+            
+            // Create vertical path
+            const verticalPathX = startX + Math.floor(playableAreaWidth / 2);
+            pathsGraphics.fillRect(verticalPathX - 20, startY, 40, playableAreaHeight);
+            
+            // Create a central circular area where paths meet
+            const centerX = startX + Math.floor(playableAreaWidth / 2);
+            const centerY = startY + Math.floor(playableAreaHeight / 2);
+            pathsGraphics.fillCircle(centerX, centerY, 80);
+            
+            // Generate noise-based terrain
+            const simplexNoise = new this.SimplexNoise();
+            
+            // // Generate different types of terrain cells
+            // for (let x = 0; x < playableAreaWidth; x += gridSize) {
+            //     for (let y = 0; y < playableAreaHeight; y += gridSize) {
+            //         // Position of the current cell
+            //         const cellX = startX + x + gridSize/2;
+            //         const cellY = startY + y + gridSize/2;
+                    
+            //         // Size variation for natural look
+            //         const sizeVariation = 0.8 + Math.random() * 0.4;
+            //         const cellWidth = gridSize * sizeVariation;
+            //         const cellHeight = gridSize * sizeVariation;
+                    
+            //         // Use noise to create natural terrain clusters
+            //         const noiseValue = (simplexNoise.noise2D(x * 0.01, y * 0.01) + 1) / 2;
+                    
+            //         // Check if we're on or near a path
+            //         const distToHorizPath = Math.abs(cellY - horizontalPathY);
+            //         const distToVertPath = Math.abs(cellX - verticalPathX);
+            //         const distToCenter = Math.sqrt(Math.pow(cellX - centerX, 2) + Math.pow(cellY - centerY, 2));
+            //         const onPath = distToHorizPath < 25 || distToVertPath < 25 || distToCenter < 85;
+                    
+            //         // Skip cells that are on the paths
+            //         if (onPath) continue;
+                    
+            //         // Create different terrain types based on noise value
+            //         if (noiseValue < 0.3) {
+            //             // Standard grass (slightly varied)
+            //             const grassShade = Math.random() * 0.2;
+            //             const color = Phaser.Display.Color.HSVToRGB(0.3, 0.3 + grassShade, 0.3 + grassShade).color;
+            //             const grass = this.add.rectangle(cellX, cellY, cellWidth, cellHeight, color);
+            //             grass.setDepth(-25);
+            //             grass.setAlpha(0.5 + Math.random() * 0.5);
+            //         } else if (noiseValue < 0.6) {
+            //             // Dirt patches
+            //             const dirtColor = Phaser.Display.Color.HSVToRGB(0.08, 0.3 + Math.random() * 0.1, 0.2 + Math.random() * 0.1).color;
+            //             const dirt = this.add.rectangle(cellX, cellY, cellWidth, cellHeight, dirtColor);
+            //             dirt.setDepth(-24);
+            //             dirt.setAlpha(0.6 + Math.random() * 0.4);
+            //         } else if (noiseValue < 0.8) {
+            //             // Scattered rocks
+            //             const rockColor = Phaser.Display.Color.HSVToRGB(0, 0, 0.2 + Math.random() * 0.15).color;
+            //             const rock = this.add.circle(cellX, cellY, cellWidth/3, rockColor);
+            //             rock.setDepth(-22);
+            //         } else if (noiseValue < 0.95 && distToCenter > 200) {
+            //             // Water puddles, but not near the center
+            //             const waterColor = Phaser.Display.Color.HSVToRGB(0.6, 0.3 + Math.random() * 0.2, 0.6 + Math.random() * 0.2).color;
+            //             const water = this.add.circle(cellX, cellY, cellWidth/2, waterColor);
+            //             water.setDepth(-23);
+            //             water.setAlpha(0.4 + Math.random() * 0.3);
+            //         } else {
+            //             // Dense vegetation
+            //             const vegColor = Phaser.Display.Color.HSVToRGB(0.3, 0.8, 0.3 + Math.random() * 0.2).color;
+            //             const veg = this.add.rectangle(cellX, cellY, cellWidth * 0.8, cellHeight * 0.8, vegColor);
+            //             veg.setDepth(-22);
+            //             veg.setAlpha(0.7 + Math.random() * 0.3);
+            //         }
+            //     }
+            // }
+            
+            // Add grid lines for playable area (optional, more subtle)
+            const gridGraphics = this.add.graphics();
+            gridGraphics.lineStyle(1, 0x333333, 0.1);
+            
+            // Draw horizontal lines
+            for (let y = startY; y <= startY + playableAreaHeight; y += gridSize) {
+                gridGraphics.moveTo(startX, y);
+                gridGraphics.lineTo(startX + playableAreaWidth, y);
+            }
+            
+            // Draw vertical lines
+            for (let x = startX; x <= startX + playableAreaWidth; x += gridSize) {
+                gridGraphics.moveTo(x, startY);
+                gridGraphics.lineTo(x, startY + playableAreaHeight);
+            }
+            
+            gridGraphics.setDepth(-20);
+            
+            // Add decorative terrain elements (grass tufts, flowers, stones)
+            for (let i = 0; i < 200; i++) {
+                // Random position within the playable area
+                const x = startX + Math.random() * playableAreaWidth;
+                const y = startY + Math.random() * playableAreaHeight;
+                
+                // Determine what decorative element to create
+                const elementType = Math.random();
+                
+                if (elementType < 0.5) {
+                    // // Grass tuft
+                    // const grassHeight = 3 + Math.random() * 5;
+                    // const grassWidth = 1 + Math.random() * 2;
+                    // const grassX = x;
+                    // const grassY = y;
+                    
+                    // const grassGraphics = this.add.graphics();
+                    // const grassColor = 0x1d5e1c + Math.floor(Math.random() * 0x111111);
+                    // grassGraphics.fillStyle(grassColor, 0.7 + Math.random() * 0.3);
+                    
+                    // // Draw a few blades for each tuft
+                    // for (let blade = 0; blade < 3 + Math.floor(Math.random() * 3); blade++) {
+                    //     const bladeX = grassX + Math.random() * 4 - 2;
+                    //     const bendDirection = Math.random() > 0.5 ? 1 : -1;
+                        
+                    //     grassGraphics.beginPath();
+                    //     grassGraphics.moveTo(bladeX - grassWidth/2, grassY);
+                    //     grassGraphics.lineTo(bladeX + grassWidth/2 * bendDirection, grassY - grassHeight/2);
+                    //     grassGraphics.lineTo(bladeX, grassY - grassHeight);
+                    //     grassGraphics.lineTo(bladeX - grassWidth/2 * bendDirection, grassY - grassHeight/2);
+                    //     grassGraphics.closePath();
+                    //     grassGraphics.fill();
+                    // }
+                    
+                    // grassGraphics.setDepth(-15);
+                }
+                else if (elementType < 0.7) {
+                    // Flowers
+                    const flowerSize = 2 + Math.random() * 2;
+                    
+                    // Randomly choose flower color
+                    const flowerColors = [0xFFFF99, 0xFF99CC, 0xCC99FF, 0x99CCFF, 0xFFFFFF];
+                    const flowerColor = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+                    
+                    // Create flower petals
+                    const flowerGraphics = this.add.graphics();
+                    flowerGraphics.fillStyle(flowerColor, 0.8);
+                    
+                    // Draw 5-6 petals
+                    const numPetals = 5 + Math.floor(Math.random() * 2);
+                    for (let p = 0; p < numPetals; p++) {
+                        const angle = (p / numPetals) * Math.PI * 2;
+                        const petalX = x + Math.cos(angle) * flowerSize;
+                        const petalY = y + Math.sin(angle) * flowerSize;
+                        
+                        flowerGraphics.fillCircle(petalX, petalY, flowerSize);
+                    }
+                    
+                    // Add flower center
+                    flowerGraphics.fillStyle(0xFFCC00, 1.0);
+                    flowerGraphics.fillCircle(x, y, flowerSize * 0.6);
+                    
+                    flowerGraphics.setDepth(-14);
+                }
+                else {
+                    // Pebbles/small stones
+                    const stoneSize = 1 + Math.random() * 3;
+                    const stoneColor = 0x666666 + Math.floor(Math.random() * 0x222222);
+                    
+                    const stone = this.add.circle(x, y, stoneSize, stoneColor);
+                    stone.setAlpha(0.5 + Math.random() * 0.5);
+                    stone.setDepth(-13);
+                }
+            }
             
             // Show a text to indicate the game has loaded
             console.log('Creating loading text');
