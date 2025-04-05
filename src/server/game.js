@@ -218,6 +218,11 @@ class Game {
       this.playerManager.setPlayerName(socket.id, data.name);
     });
     
+    // Handle setting player character type
+    socket.on('setPlayerCharType', (data) => {
+      this.playerManager.setPlayerCharacterType(socket.id, data.charType);
+    });
+    
     // Handle coin collection
     socket.on('collectCoin', (data) => {
       try {

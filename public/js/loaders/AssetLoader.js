@@ -18,6 +18,24 @@ class AssetLoader {
                     frameHeight: 20
                 }
             );
+
+            console.log('Loading character sprite sheet');
+            scene.load.spritesheet('magic', 
+                'sprites/magic.png', 
+                { 
+                    frameWidth: 18,
+                    frameHeight: 20
+                }
+            );
+
+            console.log('Loading character sprite sheet');
+            scene.load.spritesheet('dinosaur', 
+                'sprites/corrected_dinosaur.png', 
+                { 
+                    frameWidth: 32,
+                    frameHeight: 32
+                }
+            );
             
             // Load projectile both as spritesheet and as image for fallback
             console.log('Loading projectile spritesheet');

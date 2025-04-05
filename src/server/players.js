@@ -27,6 +27,7 @@ class PlayerManager {
       score: 0, // Track player's score
       lastHitTime: 0,
       name: "Player" + Math.floor(Math.random() * 1000),
+      charType: 'character', // Default character type
       inputs: {
         left: false,
         right: false,
@@ -121,7 +122,8 @@ class PlayerManager {
         y: player.y,
         health: player.health,
         ammo: player.ammo,
-        score: player.score // Include score in respawn data
+        score: player.score, // Include score in respawn data
+        charType: player.charType // Include character type in respawn data
       });
     }
   }
@@ -208,7 +210,8 @@ class PlayerManager {
       health: player.health,
       ammo: player.ammo,
       score: player.score,
-      name: player.name
+      name: player.name,
+      charType: player.charType || 'character'
     }));
   }
 
@@ -264,6 +267,30 @@ class PlayerManager {
       console.error(`Cannot increase score: player ${socketId} does not exist`);
       return false;
     }
+  }
+
+  /**
+   * Set player character type
+   * @param {string} socketId - The socket ID of the player
+   * @param {string} charType - The character type to set
+   * @returns {boolean} Whether the character type was updated successfully
+   */
+  setPlayerCharacterType(socketId, charType) {
+    if (this.players[socketId]) {
+      this.players[socketId].charType = charType;
+      
+      // Broadcast the character type update to all clients
+      this.io.emit('playerCharTypeUpdate', {
+        playerId: socketId,
+        charType: charType
+      });
+      
+      console.log(`Player ${socketId} character type updated to ${charType}`);
+      return true;
+    }
+    
+    console.error(`Cannot update character type: player ${socketId} does not exist`);
+    return false;
   }
 }
 

@@ -37,8 +37,198 @@ class UserInterface {
         this.createDefeatText();
         this.createMinimap();
         
+        // Create character selection screen (hidden initially)
+        this.createCharacterSelectionScreen();
+        
+        // Create in-game character selector for changes after spawn
+        this.createCharacterSelector();
+        
         // Set up name input handlers
         this.setupNameInput();
+    }
+    
+    /**
+     * Create the character selection screen that appears before the player spawns
+     */
+    createCharacterSelectionScreen() {
+        // Create the overlay container
+        this.selectionOverlay = document.createElement('div');
+        this.selectionOverlay.id = 'characterSelectionOverlay';
+        this.selectionOverlay.style.position = 'fixed';
+        this.selectionOverlay.style.top = '0';
+        this.selectionOverlay.style.left = '0';
+        this.selectionOverlay.style.width = '100%';
+        this.selectionOverlay.style.height = '100%';
+        this.selectionOverlay.style.backgroundColor = 'rgba(0,0,0,0.85)';
+        this.selectionOverlay.style.display = 'flex';
+        this.selectionOverlay.style.flexDirection = 'column';
+        this.selectionOverlay.style.justifyContent = 'center';
+        this.selectionOverlay.style.alignItems = 'center';
+        this.selectionOverlay.style.zIndex = '2000';
+        
+        // Create title
+        const title = document.createElement('h1');
+        title.textContent = 'Choose Your Character';
+        title.style.color = 'white';
+        title.style.fontFamily = 'Arial, sans-serif';
+        title.style.fontSize = '36px';
+        title.style.marginBottom = '30px';
+        title.style.textShadow = '0 0 10px #0088ff';
+        
+        // Create character selection container
+        const selectionContainer = document.createElement('div');
+        selectionContainer.style.display = 'flex';
+        selectionContainer.style.justifyContent = 'center';
+        selectionContainer.style.gap = '40px';
+        
+        // Character options with images
+        const characterTypes = [
+            { value: 'dinosaur', label: 'Dinosaur', image: '/sprites/dinosaur.png' },
+            { value: 'character', label: 'Human', image: '/sprites/character_1.png' },
+            { value: 'magic', label: 'Wizard', image: '/sprites/magic.png' }
+        ];
+        
+        // Create a card for each character
+        characterTypes.forEach(char => {
+            const card = document.createElement('div');
+            card.className = 'character-card';
+            card.style.width = '200px';
+            card.style.height = '280px';
+            card.style.backgroundColor = 'rgba(20,20,20,0.8)';
+            card.style.border = '2px solid #444';
+            card.style.borderRadius = '10px';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.alignItems = 'center';
+            card.style.padding = '15px';
+            card.style.cursor = 'pointer';
+            card.style.transition = 'all 0.2s ease';
+            
+            // Character image
+            const image = document.createElement('img');
+            image.src = char.image;
+            image.style.width = '120px';
+            image.style.height = '120px';
+            image.style.objectFit = 'contain';
+            image.style.marginBottom = '15px';
+            image.style.imageRendering = 'pixelated';
+            
+            // Character name
+            const name = document.createElement('h2');
+            name.textContent = char.label;
+            name.style.color = 'white';
+            name.style.fontFamily = 'Arial, sans-serif';
+            name.style.fontSize = '24px';
+            name.style.margin = '0 0 10px 0';
+            
+            // Add hover effects
+            card.addEventListener('mouseover', () => {
+                card.style.backgroundColor = 'rgba(40,40,40,0.9)';
+                card.style.borderColor = '#0088ff';
+                card.style.boxShadow = '0 0 15px rgba(0,136,255,0.6)';
+                card.style.transform = 'translateY(-5px)';
+            });
+            
+            card.addEventListener('mouseout', () => {
+                card.style.backgroundColor = 'rgba(20,20,20,0.8)';
+                card.style.borderColor = '#444';
+                card.style.boxShadow = 'none';
+                card.style.transform = 'translateY(0)';
+            });
+            
+            // Add click handler to select character
+            card.addEventListener('click', () => {
+                // Update game config with selected character
+                GameConfig.setPlayerCharacter(char.value);
+                
+                // Hide the selection screen
+                this.hideCharacterSelectionScreen();
+                
+                // Notify the scene that a character has been selected
+                this.scene.onCharacterSelected(char.value);
+            });
+            
+            // Append elements to card
+            card.appendChild(image);
+            card.appendChild(name);
+            
+            // Add the card to the container
+            selectionContainer.appendChild(card);
+        });
+        
+        // Name input section
+        const nameSection = document.createElement('div');
+        nameSection.style.marginTop = '30px';
+        nameSection.style.display = 'flex';
+        nameSection.style.flexDirection = 'column';
+        nameSection.style.alignItems = 'center';
+        
+        const nameLabel = document.createElement('label');
+        nameLabel.textContent = 'Enter Your Name:';
+        nameLabel.style.color = 'white';
+        nameLabel.style.fontFamily = 'Arial, sans-serif';
+        nameLabel.style.fontSize = '18px';
+        nameLabel.style.marginBottom = '10px';
+        
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.id = 'initialNameInput';
+        nameInput.maxLength = 12;
+        nameInput.style.padding = '8px 12px';
+        nameInput.style.fontSize = '16px';
+        nameInput.style.width = '200px';
+        nameInput.style.backgroundColor = '#222';
+        nameInput.style.color = 'white';
+        nameInput.style.border = '1px solid #555';
+        nameInput.style.borderRadius = '4px';
+        nameInput.style.marginBottom = '15px';
+        nameInput.value = `Player${Math.floor(Math.random() * 1000)}`;
+        
+        // Append elements
+        nameSection.appendChild(nameLabel);
+        nameSection.appendChild(nameInput);
+        
+        // Assemble the overlay
+        this.selectionOverlay.appendChild(title);
+        this.selectionOverlay.appendChild(selectionContainer);
+        this.selectionOverlay.appendChild(nameSection);
+        
+        // Initially hide the overlay, will be shown when needed
+        this.selectionOverlay.style.display = 'none';
+        
+        // Add to DOM
+        document.body.appendChild(this.selectionOverlay);
+        
+        // Store the name input for later access
+        this.initialNameInput = nameInput;
+    }
+    
+    /**
+     * Show the character selection screen
+     */
+    showCharacterSelectionScreen() {
+        if (this.selectionOverlay) {
+            this.selectionOverlay.style.display = 'flex';
+        }
+    }
+    
+    /**
+     * Hide the character selection screen
+     */
+    hideCharacterSelectionScreen() {
+        if (this.selectionOverlay) {
+            this.selectionOverlay.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Get the player's name from the initial input
+     */
+    getInitialPlayerName() {
+        if (this.initialNameInput) {
+            return this.initialNameInput.value.trim() || `Player${Math.floor(Math.random() * 1000)}`;
+        }
+        return `Player${Math.floor(Math.random() * 1000)}`;
     }
     
     /**
@@ -202,6 +392,122 @@ class UserInterface {
     /**
      * Set up name input handlers
      */
+    /**
+     * Create the character selector UI
+     */
+    createCharacterSelector() {
+        // Create character selector container
+        const selectorContainer = document.createElement('div');
+        selectorContainer.id = 'characterSelectorContainer';
+        selectorContainer.style.position = 'absolute';
+        selectorContainer.style.right = '20px';
+        selectorContainer.style.top = '45px'; // Below the name input
+        selectorContainer.style.backgroundColor = 'rgba(0,0,0,0.7)';
+        selectorContainer.style.padding = '8px';
+        selectorContainer.style.borderRadius = '5px';
+        selectorContainer.style.zIndex = '1000';
+        
+        // Create label for the selector
+        const selectorLabel = document.createElement('span');
+        selectorLabel.textContent = 'Character: ';
+        selectorLabel.style.color = 'white';
+        selectorLabel.style.fontFamily = 'Arial, sans-serif';
+        selectorLabel.style.fontSize = '14px';
+        selectorLabel.style.marginRight = '5px';
+        
+        // Create the dropdown
+        this.characterSelector = document.createElement('select');
+        this.characterSelector.id = 'characterSelector';
+        this.characterSelector.style.padding = '3px';
+        this.characterSelector.style.borderRadius = '3px';
+        this.characterSelector.style.backgroundColor = '#222';
+        this.characterSelector.style.color = 'white';
+        this.characterSelector.style.border = '1px solid #555';
+        
+        // Add options for each character type
+        const characterTypes = [
+            { value: 'dinosaur', label: 'Dinosaur' },
+            { value: 'character', label: 'Human' },
+            { value: 'magic', label: 'Wizard' }
+        ];
+        
+        characterTypes.forEach(char => {
+            const option = document.createElement('option');
+            option.value = char.value;
+            option.textContent = char.label;
+            // Set the default selected option based on current config
+            if (char.value === GameConfig.getPlayerCharacter()) {
+                option.selected = true;
+            }
+            this.characterSelector.appendChild(option);
+        });
+        
+        // Add change event handler
+        this.characterSelector.addEventListener('change', () => {
+            const selectedChar = this.characterSelector.value;
+            // Update game config
+            GameConfig.setPlayerCharacter(selectedChar);
+            
+            // If the player already exists, force a respawn
+            if (this.scene.player) {
+                // Create floating notification
+                const notification = this.scene.add.text(
+                    this.scene.cameras.main.width / 2,
+                    100,
+                    'Changing character...',
+                    {
+                        fontSize: '18px',
+                        fontStyle: 'bold',
+                        fill: '#FFFFFF',
+                        stroke: '#000000',
+                        strokeThickness: 3,
+                        backgroundColor: '#333333'
+                    }
+                );
+                notification.setOrigin(0.5);
+                notification.setScrollFactor(0);
+                notification.setDepth(1000);
+                notification.setPadding(10);
+                
+                // Add fade out animation
+                this.scene.tweens.add({
+                    targets: notification,
+                    alpha: 0,
+                    y: 80,
+                    duration: 1000,
+                    ease: 'Power2',
+                    onComplete: () => notification.destroy()
+                });
+                
+                // Create temporary player defeat effect
+                if (this.scene.player && this.scene.player.sprite) {
+                    const playerX = this.scene.player.sprite.x;
+                    const playerY = this.scene.player.sprite.y;
+                    
+                    // Create a flash effect
+                    const flash = this.scene.add.circle(
+                        playerX, playerY, 40, 0xffffff, 0.8
+                    );
+                    this.scene.tweens.add({
+                        targets: flash,
+                        alpha: 0,
+                        scale: 2,
+                        duration: 300,
+                        onComplete: () => flash.destroy()
+                    });
+                }
+                
+                // Force immediate respawn to change character
+                this.scene.resetPlayer();
+            }
+        });
+        
+        // Append elements to the container
+        selectorContainer.appendChild(selectorLabel);
+        selectorContainer.appendChild(this.characterSelector);
+        document.body.appendChild(selectorContainer);
+    }
+    
     setupNameInput() {
         this.nameInput = document.getElementById('playerName');
         this.setNameBtn = document.getElementById('setNameButton');
@@ -574,8 +880,8 @@ class UserInterface {
             const viewportWidth = this.minimapViewport.width;
             const viewportHeight = this.minimapViewport.height;
             
-            this.minimapViewport.x = minimapX - (viewportWidth / 2);
-            this.minimapViewport.y = minimapY - (viewportHeight / 2);
+            this.minimapViewport.x = minimapX
+            this.minimapViewport.y = minimapY
         }
     }
     

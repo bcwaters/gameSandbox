@@ -694,20 +694,23 @@ class MainScene extends Phaser.Scene {
     setupSocketEvents() {
         // When current players data is received
         this.socketManager.on('currentPlayers', (players) => {
+            // Store the player info for when character is selected
+            this.pendingPlayerInfo = null;
+            
             Object.keys(players).forEach((id) => {
                 const playerInfo = players[id];
                 
                 if (id === this.socketManager.getPlayerId()) {
-                    // Create our player
-                    this.createPlayer(playerInfo);
+                    // Store player info but don't create player yet
+                    this.pendingPlayerInfo = playerInfo;
+                    
+                    // Show character selection screen
+                    this.ui.showCharacterSelectionScreen();
                 } else {
-                    // Create other players
+                    // Create other players immediately
                     this.addOtherPlayer(playerInfo);
                 }
             });
-            
-            // Setup collisions
-            this.setupCollisions();
         });
         
         // When current obstacles data is received
@@ -1049,6 +1052,7 @@ class MainScene extends Phaser.Scene {
                 const otherPlayer = this.otherPlayers[playerInfo.id];
                 otherPlayer.sprite.x = playerInfo.x;
                 otherPlayer.sprite.y = playerInfo.y;
+                // Use the other player's actual character type for animation
                 otherPlayer.playAnimation(playerInfo.direction, playerInfo.moving);
                 
                 // Check if moved player is visible in viewport
@@ -1077,6 +1081,49 @@ class MainScene extends Phaser.Scene {
             } else if (this.otherPlayers[playerInfo.id]) {
                 // Update other player's name
                 this.otherPlayers[playerInfo.id].setName(playerInfo.name);
+            }
+        });
+        
+        // When a player's character type is updated
+        this.socketManager.on('playerCharTypeUpdate', (charTypeInfo) => {
+            const playerId = charTypeInfo.playerId;
+            const charType = charTypeInfo.charType;
+            
+            // Only update other players, not ourselves
+            if (playerId !== this.socketManager.getPlayerId() && this.otherPlayers[playerId]) {
+                const otherPlayer = this.otherPlayers[playerId];
+                const playerX = otherPlayer.sprite.x;
+                const playerY = otherPlayer.sprite.y;
+                const playerName = otherPlayer.name;
+                const playerHealth = otherPlayer.health;
+                const playerAmmo = otherPlayer.ammo;
+                
+                // Remove the old player instance
+                otherPlayer.destroy();
+                
+                // Create a new player with the updated character type
+                this.otherPlayers[playerId] = new Player(
+                    this,
+                    playerX,
+                    playerY,
+                    charType,
+                    false,
+                    playerId,
+                    playerName
+                );
+                
+                // Restore player properties
+                this.otherPlayers[playerId].setHealth(playerHealth);
+                this.otherPlayers[playerId].setAmmo(playerAmmo);
+                
+                // Add to physics group
+                this.otherPlayersGroup.add(this.otherPlayers[playerId].sprite);
+                
+                // Store player ID on sprite for collision handling
+                this.otherPlayers[playerId].sprite.playerId = playerId;
+                
+                // Create a character change effect
+                this.createCharacterChangeEffect(playerX, playerY, charType);
             }
         });
         
@@ -1495,6 +1542,37 @@ class MainScene extends Phaser.Scene {
         });
     }
     
+    /**
+     * Handle character selection from the selection screen
+     * @param {string} charType - The selected character type
+     */
+    onCharacterSelected(charType) {
+        // Make sure we have pending player info
+        if (!this.pendingPlayerInfo) {
+            console.error('No pending player info found when character selected');
+            return;
+        }
+        
+        // Get the player name from the UI
+        const playerName = this.ui.getInitialPlayerName();
+        
+        // Create a copy of the pending player info
+        const playerInfo = { ...this.pendingPlayerInfo, name: playerName };
+        
+        // Create the player with the selected character
+        this.createPlayer(playerInfo);
+        
+        // Tell the server about the character and name
+        this.socketManager.setPlayerCharType(charType);
+        this.socketManager.setPlayerName(playerName);
+        
+        // Setup collisions now that the player exists
+        this.setupCollisions();
+        
+        // Create selection effect
+        this.createCharacterChangeEffect(playerInfo.x, playerInfo.y, charType);
+    }
+    
     setupCollisions() {
         if (this.player) {
             // Setup collision between player and other players
@@ -1820,12 +1898,15 @@ class MainScene extends Phaser.Scene {
     }
     
     createPlayer(playerInfo) {
+        // Get the character type from game config
+        const characterType = GameConfig.getPlayerCharacter();
+        
         // Create the local player
         this.player = new Player(
             this,
             playerInfo.x,
             playerInfo.y,
-            'character',
+            characterType,
             true,
             playerInfo.id,
             playerInfo.name
@@ -1854,12 +1935,12 @@ class MainScene extends Phaser.Scene {
     }
     
     addOtherPlayer(playerInfo) {
-        // Create a new player instance for another player
+        // Create a new player instance for another player using their character type
         const otherPlayer = new Player(
             this,
             playerInfo.x,
             playerInfo.y,
-            'character',
+            playerInfo.charType || AnimationManager.CHARACTER_TYPES.CHARACTER, // Use the player's character type if available
             false,
             playerInfo.id,
             playerInfo.name
@@ -2332,18 +2413,91 @@ class MainScene extends Phaser.Scene {
         // Hide defeat text
         this.ui.hideDefeatText();
         
-        // Re-enable player
-        if (this.player) {
+        // Check if the character type has changed
+        const currentCharType = this.player ? this.player.charType : null;
+        const newCharType = GameConfig.getPlayerCharacter();
+        const hasCharChanged = currentCharType !== newCharType;
+        
+        // Store position for respawn effect
+        const playerX = this.player ? this.player.sprite.x : 0;
+        const playerY = this.player ? this.player.sprite.y : 0;
+        
+        // If character type changed, destroy and recreate player with new type
+        if (hasCharChanged && this.player) {
+            // Clean up old player
+            const playerName = this.player.name;
+            const playerScore = this.player.score || 0;
+            const playerId = this.player.id;
+            
+            // Destroy the old player instance
+            this.player.destroy();
+            
+            // Create new player with updated character type
+            this.player = new Player(
+                this,
+                playerX,
+                playerY,
+                newCharType,
+                true,
+                playerId,
+                playerName
+            );
+            
+            // Restore player properties
+            this.player.score = playerScore;
+            this.player.setHealth(this.player.maxHealth);
+            this.player.setAmmo(this.player.maxAmmo);
+            
+            // Re-setup camera to follow the new player sprite
+            this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
+            
+            // Show notification
+            const notification = this.add.text(
+                this.cameras.main.width / 2,
+                100,
+                'Character Changed!',
+                {
+                    fontSize: '24px',
+                    fontStyle: 'bold',
+                    fill: '#FFFFFF',
+                    stroke: '#000000',
+                    strokeThickness: 3,
+                    backgroundColor: '#333333'
+                }
+            );
+            notification.setOrigin(0.5);
+            notification.setScrollFactor(0);
+            notification.setDepth(1000);
+            notification.setPadding(10);
+            
+            // Add fade out animation
+            this.tweens.add({
+                targets: notification,
+                alpha: 0,
+                y: 80,
+                duration: 2000,
+                ease: 'Power2',
+                onComplete: () => notification.destroy()
+            });
+            
+            // Tell server about character type change
+            this.socketManager.setPlayerCharType(newCharType);
+        } else if (this.player) {
+            // Just re-enable the existing player
             this.player.sprite.clearTint();
             this.player.sprite.setVisible(true); // Make player visible again
             this.player.sprite.body.enable = true; // Re-enable physics
-            
-            // Add a respawn effect
-            this.createRespawnEffect(this.player.sprite.x, this.player.sprite.y);
-            
-            // Tell server to respawn player
-            this.socketManager.respawnPlayer();
         }
+        
+        // Add a respawn effect with enhanced visuals for character changes
+        if (hasCharChanged) {
+            this.createCharacterChangeEffect(playerX, playerY, newCharType);
+        } else {
+            this.createRespawnEffect(playerX, playerY);
+        }
+        
+        // Tell server to respawn player
+        this.socketManager.respawnPlayer();
         
         this.isDefeated = false;
     }
@@ -2655,18 +2809,214 @@ class MainScene extends Phaser.Scene {
         }
     }
     
+    /**
+     * Create a visual effect for player respawn
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     */
     createRespawnEffect(x, y) {
-        // Create a respawn circle that expands outward
-        const respawnCircle = this.add.circle(x, y, 0, 0x00ffff, 0.6);
-        respawnCircle.setDepth(5);
+        // Create energy ring to show respawn location
+        const energyRing = this.add.circle(x, y, 0, 0x00ffff, 0.8);
+        energyRing.setDepth(5);
         
-        // Animate the respawn circle
+        // Animate the ring
         this.tweens.add({
-            targets: respawnCircle,
-            radius: 50,
+            targets: energyRing,
+            radius: 80,
             alpha: 0,
             duration: 800,
-            onComplete: () => respawnCircle.destroy()
+            ease: 'Cubic.Out',
+            onComplete: () => energyRing.destroy()
+        });
+        
+        // Create energy particles
+        for (let i = 0; i < 15; i++) {
+            const angle = (i / 15) * Math.PI * 2;
+            const distance = 30;
+            const particle = this.add.circle(
+                x + Math.cos(angle) * distance,
+                y + Math.sin(angle) * distance,
+                5,
+                0x00ffff,
+                1
+            );
+            particle.setDepth(6);
+            
+            // Animate particles moving inward
+            this.tweens.add({
+                targets: particle,
+                x: x,
+                y: y,
+                alpha: 0,
+                duration: 500,
+                ease: 'Cubic.In',
+                onComplete: () => particle.destroy()
+            });
+        }
+        
+        // Create flash at the end
+        this.time.delayedCall(500, () => {
+            const flash = this.add.circle(x, y, 60, 0xffffff, 0.8);
+            flash.setDepth(7);
+            this.tweens.add({
+                targets: flash,
+                alpha: 0,
+                scale: 1.5,
+                duration: 300,
+                onComplete: () => flash.destroy()
+            });
+        });
+    }
+    
+    /**
+     * Create a special visual effect for character change
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @param {string} charType - The new character type
+     */
+    createCharacterChangeEffect(x, y, charType) {
+        // Get color based on character type
+        let color;
+        switch(charType) {
+            case 'dinosaur':
+                color = 0x00ff00; // Green for dinosaur
+                break;
+            case 'magic':
+                color = 0x9900ff; // Purple for wizard
+                break;
+            case 'character':
+                color = 0xff9900; // Orange for human
+                break;
+            default:
+                color = 0xffff00; // Yellow as fallback
+        }
+        
+        // Create a larger, more dramatic energy ring
+        const energyRing = this.add.circle(x, y, 60, color, 0.9);
+        energyRing.setDepth(5);
+        
+        // Animate the ring
+        this.tweens.add({
+            targets: energyRing,
+            radius: 120,
+            alpha: 0,
+            duration: 1200,
+            ease: 'Cubic.Out',
+            onComplete: () => energyRing.destroy()
+        });
+        
+        // Create an inner ring with opposite direction animation
+        const innerRing = this.add.circle(x, y, 100, 0xffffff, 0.7);
+        innerRing.setDepth(5);
+        this.tweens.add({
+            targets: innerRing,
+            radius: 20,
+            alpha: 0,
+            duration: 1000,
+            ease: 'Cubic.In',
+            onComplete: () => innerRing.destroy()
+        });
+        
+        // Create energy particles - more of them and more dramatic
+        for (let i = 0; i < 30; i++) {
+            const angle = (i / 30) * Math.PI * 2;
+            const distance = 80;
+            const particle = this.add.circle(
+                x + Math.cos(angle) * distance,
+                y + Math.sin(angle) * distance,
+                Math.random() * 6 + 2, // Random size for more variety
+                color,
+                1
+            );
+            particle.setDepth(6);
+            
+            // Animate particles moving inward with slight randomness
+            this.tweens.add({
+                targets: particle,
+                x: x + (Math.random() * 20 - 10), // Add a little random offset
+                y: y + (Math.random() * 20 - 10),
+                alpha: 0,
+                scale: Math.random() * 0.5 + 0.5, // Random scale change
+                duration: 700 + Math.random() * 300, // Random duration
+                ease: 'Cubic.In',
+                onComplete: () => particle.destroy()
+            });
+        }
+        
+        // Create rotating triangles for a more magical effect
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2;
+            const distance = 50;
+            
+            // Create a triangle shape
+            const triangle = this.add.triangle(
+                x + Math.cos(angle) * distance,
+                y + Math.sin(angle) * distance,
+                0, -10, // First point (top)
+                -8, 5,  // Second point (bottom left)
+                8, 5,   // Third point (bottom right)
+                color
+            );
+            triangle.setAlpha(0.8);
+            triangle.setDepth(6);
+            triangle.angle = angle * (180 / Math.PI); // Convert radians to degrees
+            
+            // Animate triangle - rotating and moving inward
+            this.tweens.add({
+                targets: triangle,
+                x: x,
+                y: y,
+                angle: triangle.angle + 270, // Rotate 3/4 circle
+                alpha: 0,
+                scale: 0.5,
+                duration: 800,
+                ease: 'Cubic.In',
+                onComplete: () => triangle.destroy()
+            });
+        }
+        
+        // Create grand flash at the end
+        this.time.delayedCall(750, () => {
+            const flash = this.add.circle(x, y, 100, 0xffffff, 0.9);
+            flash.setDepth(7);
+            
+            // Create radial rays emanating from center
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2;
+                const ray = this.add.rectangle(
+                    x, y,
+                    10, 1, // Width and height
+                    color
+                );
+                ray.setAlpha(0.8);
+                ray.setDepth(6);
+                ray.setOrigin(0, 0.5); // Set origin to left center
+                ray.rotation = angle;
+                
+                // Animate rays outward
+                this.tweens.add({
+                    targets: ray,
+                    scaleX: 15, // Stretch outward
+                    alpha: 0,
+                    duration: 600,
+                    ease: 'Cubic.Out',
+                    onComplete: () => ray.destroy()
+                });
+            }
+            
+            // Animate flash
+            this.tweens.add({
+                targets: flash,
+                alpha: 0,
+                scale: 2,
+                duration: 500,
+                onComplete: () => flash.destroy()
+            });
+            
+            // Play a sound if available
+            if (this.shootSound) {
+                this.shootSound.play({ volume: 0.5 });
+            }
         });
     }
     

@@ -62,6 +62,7 @@ class SocketManager {
             swordUsed: [],
             playerNameUpdate: [],
             playerScoreUpdate: [],
+            playerCharTypeUpdate: [], // Added character type update callback
             currentObstacles: [],
             newObstacle: [],
             obstacleHit: [],
@@ -227,6 +228,11 @@ class SocketManager {
             this.callbacks.playerScoreUpdate.forEach(callback => callback(scoreInfo));
         });
         
+        // Player character type update
+        this.socket.on('playerCharTypeUpdate', (charTypeInfo) => {
+            this.callbacks.playerCharTypeUpdate.forEach(callback => callback(charTypeInfo));
+        });
+        
         // Circle events
         this.socket.on('circleCreated', (circleData) => {
             this.callbacks.circleCreated.forEach(callback => callback(circleData));
@@ -376,6 +382,16 @@ class SocketManager {
     respawnPlayer() {
         this.socket.emit('respawnPlayer', {
             playerId: this.playerId
+        });
+    }
+    
+    /**
+     * Send player character type update to the server
+     * @param {string} charType - The character type
+     */
+    setPlayerCharType(charType) {
+        this.socket.emit('setPlayerCharType', {
+            charType: charType
         });
     }
     

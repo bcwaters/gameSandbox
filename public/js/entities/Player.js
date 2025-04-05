@@ -7,24 +7,34 @@ class Player {
      * @param {Phaser.Scene} scene - The scene this player belongs to
      * @param {number} x - The x coordinate
      * @param {number} y - The y coordinate
-     * @param {string} texture - The texture key
+     * @param {string} charType - The character type to use for animations
      * @param {boolean} isLocalPlayer - Whether this is the local player
      * @param {string} id - The player's ID
      * @param {string} name - The player's name
      */
-    constructor(scene, x, y, texture, isLocalPlayer, id, name) {
+    constructor(scene, x, y, charType, isLocalPlayer, id, name) {
         this.scene = scene;
         this.isLocalPlayer = isLocalPlayer;
         this.id = id;
         this.name = name || "Player";
+        this.charType = charType || AnimationManager.CHARACTER_TYPES.CHARACTER;
         
-        // Create the sprite
-        this.sprite = scene.physics.add.sprite(x, y, texture);
+        // Get animation configuration for this character type
+        const animConfig = AnimationManager.getAnimationConfig(this.charType);
+        
+        // Create the sprite with the appropriate texture
+        this.sprite = scene.physics.add.sprite(x, y, animConfig.texture);
         this.sprite.setCollideWorldBounds(true);
         
-        // Set up physics body
-        this.sprite.body.setSize(12, 12);
-        this.sprite.body.setOffset(2, 6);
+        // Set up physics body using configuration
+        this.sprite.body.setSize(
+            animConfig.physicsSize.width, 
+            animConfig.physicsSize.height
+        );
+        this.sprite.body.setOffset(
+            animConfig.physicsOffset.x, 
+            animConfig.physicsOffset.y
+        );
         
         // Set appropriate physics properties
         if (isLocalPlayer) {
@@ -141,9 +151,9 @@ class Player {
             if (direction.includes('-')) {
                 // Extract the primary direction for animation
                 const primaryDir = direction.split('-')[0]; // 'up', 'down'
-                this.sprite.anims.play('walk-' + primaryDir, true);
+                this.sprite.anims.play(`walk-${primaryDir}-${this.charType}`, true);
             } else {
-                this.sprite.anims.play('walk-' + direction, true);
+                this.sprite.anims.play(`walk-${direction}-${this.charType}`, true);
             }
         } else {
             this.sprite.anims.pause();
